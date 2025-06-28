@@ -1,3 +1,5 @@
 streamlit
 requests
 psutil
+supabase-py
+bcrypt
