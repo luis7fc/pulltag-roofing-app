@@ -9,14 +9,27 @@ SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 def load_roof_types():
-    result = supabase.table("roof_type").select("*").order("roof_type", asc=True).execute()
+    result = supabase.table("roof_type").select("*").order("roof_type", "asc").execute()
     return result.data if result.data else []
 
+def roof_type_exists(roof_type, cost_code):
+    result = supabase.table("roof_type").select("*").match({
+        "roof_type": roof_type,
+        "cost_code": cost_code
+    }).execute()
+    return len(result.data) > 0
+
 def add_roof_type(roof_type, cost_code):
-    return supabase.table("roof_type").insert({"roof_type": roof_type, "cost_code": cost_code}).execute()
+    return supabase.table("roof_type").insert({
+        "roof_type": roof_type,
+        "cost_code": cost_code
+    }).execute()
 
 def delete_roof_type(roof_type, cost_code):
-    return supabase.table("roof_type").delete().match({"roof_type": roof_type, "cost_code": cost_code}).execute()
+    return supabase.table("roof_type").delete().match({
+        "roof_type": roof_type,
+        "cost_code": cost_code
+    }).execute()
 
 def run():
     st.title("🏗️ Roof Types Editor")
@@ -44,11 +57,16 @@ def run():
         if submitted:
             if not roof_type or not cost_code:
                 st.warning("Both fields are required.")
+            elif roof_type_exists(roof_type, cost_code):
+                st.warning("❗This roof type and cost code combo already exists.")
             else:
                 try:
-                    add_roof_type(roof_type, cost_code)
-                    st.success(f"✅ Added `{roof_type} - {cost_code}`")
-                    st.rerun()
+                    response = add_roof_type(roof_type, cost_code)
+                    if response.status_code == 201:
+                        st.success(f"✅ Added `{roof_type} - {cost_code}`")
+                        st.rerun()
+                    else:
+                        st.error(f"Supabase error {response.status_code}: {response.data}")
                 except Exception as e:
                     st.error(f"Error: {e}")
 
@@ -65,9 +83,12 @@ def run():
                 st.warning("Both fields are required.")
             else:
                 try:
-                    delete_roof_type(roof_type_del, cost_code_del)
-                    st.success(f"🗑️ Deleted `{roof_type_del} - {cost_code_del}`")
-                    st.rerun()
+                    response = delete_roof_type(roof_type_del, cost_code_del)
+                    if response.status_code in [200, 204]:
+                        st.success(f"🗑️ Deleted `{roof_type_del} - {cost_code_del}`")
+                        st.rerun()
+                    else:
+                        st.error(f"Supabase error {response.status_code}: {response.data}")
                 except Exception as e:
                     st.error(f"Error: {e}")
 
