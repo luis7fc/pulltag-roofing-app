@@ -1,5 +1,31 @@
+# Core App Dependencies
 streamlit
 requests
 psutil
-supabase
+pandas
 bcrypt
+supabase
+python-dotenv
+
+# For file uploads and PDF/image parsing (used in budget parser and invoice tools)
+PyMuPDF
+pdfplumber
+python-docx
+openpyxl
+Pillow
+
+# For barcode/QR scanning support
+pyzbar
+opencv-python
+
+# For ODBC and Sage integration
+pyodbc
+
+# For background tasks (if needed)
+schedule
+
+# For advanced Streamlit UI enhancements
+streamlit-extras
+
+# Optional: for CSV export/downloads and better dataframe handling
+pyarrow
