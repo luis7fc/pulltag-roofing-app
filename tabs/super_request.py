@@ -1,4 +1,4 @@
 import streamlit as st
 
-def show():
+def run():
     st.header('Super Request')
