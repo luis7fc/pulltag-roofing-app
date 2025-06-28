@@ -2,8 +2,8 @@ import streamlit as st
 import requests
 import os
 
-SUPABASE_URL = os.getenv("SUPABASE_URL", st.secrets.get("SUPABASE_URL"))
-SUPABASE_KEY = os.getenv("SUPABASE_KEY", st.secrets.get("SUPABASE_KEY"))
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
 def login():
     if "user" in st.session_state:
