@@ -10,10 +10,10 @@ def login():
     if "user" in st.session_state:
         return st.session_state["user"]
 
-    st.title("🔐 Iniciar sesión")
-    username = st.text_input("Usuario")
-    password = st.text_input("Contraseña", type="password")
-    login_btn = st.button("Entrar")
+    st.title("🔐 Start Session")
+    username = st.text_input("Username")
+    password = st.text_input("Password", type="password")
+    login_btn = st.button("Enter")
 
     if login_btn and username and password:
         # Only fetch user by username
@@ -32,7 +32,7 @@ def login():
                 st.session_state["user"] = user
                 return user
             else:
-                st.error("Contraseña incorrecta.")
+                st.error("Wrong Password.")
         else:
-            st.error("Usuario no encontrado.")
+            st.error("Invalid username.")
     return None
