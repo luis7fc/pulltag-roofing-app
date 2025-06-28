@@ -1,5 +1,6 @@
 import streamlit as st
 from auth import login
+from system_monitor import show_system_metrics
 
 from tabs import (
     community_creation,
@@ -48,7 +49,7 @@ def main():
 
     tab_map = TABS_BY_ROLE.get(user['role'], {})
     tab_names = list(tab_map.keys())
-
+    show_system_metrics(user['role'])
     selected_tab = st.sidebar.radio("Navegación", tab_names)
     tab_map[selected_tab]()
 
