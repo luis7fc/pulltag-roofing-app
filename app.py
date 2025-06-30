@@ -4,7 +4,7 @@ from supabase import create_client
 import os
 from system_monitor import show_system_metrics
 
-# Tab scripts (each must define a `run()` function)
+# Tab scripts
 from tabs import (
     community_creation,
     budget_upload,
@@ -19,12 +19,17 @@ from tabs import (
 
 st.set_page_config(page_title="Roofing Pulltag System", layout="wide")
 
-# 🔐 Supabase + streamlit-authenticator login setup
+# Supabase setup
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+# Debug environment variables
+st.write(f"SUPABASE_URL: {SUPABASE_URL}, SUPABASE_KEY: {SUPABASE_KEY}, AUTH_COOKIE_KEY: {os.environ.get('AUTH_COOKIE_KEY')}")
+
+# Fetch users
 response = supabase.table("users").select("username, password, role").execute()
+st.write(f"Supabase Response: {response.data}")  # Debug: Check data
 users = response.data or []
 
 credentials = {
@@ -37,7 +42,7 @@ credentials = {
         for user in users
     }
 }
-
+st.write(f"Credentials: {credentials}")  # Debug: Inspect credentials
 
 authenticator = stauth.Authenticate(
     credentials,
@@ -46,52 +51,14 @@ authenticator = stauth.Authenticate(
     cookie_expiry_days=30
 )
 
-name, auth_status, username = authenticator.login("main", "Login")
+# Login with error handling
+login_result = authenticator.login("main", "Login")
+if login_result is None:
+    st.error("Authentication failed. Please check your credentials or Supabase connection.")
+    st.stop()
+name, auth_status, username = login_result
 
 if not auth_status:
     st.stop()
 
-role = credentials[username]["role"]
-
-# Sidebar context
-st.sidebar.markdown(f"**Logged in as:** `{username}` ({role})")
-authenticator.logout("Log out", "sidebar")
-show_system_metrics(role)
-
-# 🔁 Tab Definitions per Role
-base_tabs = {
-    "🏘️ Community Creation": community_creation.run,
-    "📄 Budget Upload": budget_upload.run,
-    "📊 Reporting & Sage Export": reporting.run,
-}
-
-exec_tabs = {
-    **base_tabs,
-    "📦 Super Request": super_request.run,
-    "🛠️ Warehouse Kitting": warehouse_kitting.run,
-    "🔁 Backorder Kitting": backorder_kitting.run,
-    "👤 User Management": user_management.run,
-    "🧾 Items Master Editor": items_editor.run,
-    "🏠 Roof Types Editor": roof_editor.run,
-}
-
-tabs_by_role = {
-    "exec": exec_tabs,
-    "admin": base_tabs,
-    "super": {
-        "📦 Super Request": super_request.run,
-    },
-    "warehouse": {
-        "🛠️ Warehouse Kitting": warehouse_kitting.run,
-        "🔁 Backorder Kitting": backorder_kitting.run,
-    },
-}
-
-# 🧭 Sidebar Navigation
-tabs = tabs_by_role.get(role, {})
-if tabs:
-    st.sidebar.title("📚 Menu")
-    choice = st.sidebar.radio("Go to", list(tabs.keys()))
-    tabs[choice]()
-else:
-    st.error("You do not have access to this app.")
+role = credentials["usernames"][username]["role"]  # Fixed: Access role safely
