@@ -6,6 +6,7 @@ pandas
 bcrypt
 supabase
 python-dotenv
+streamlit-authenticator
 
 # For file uploads and PDF/image parsing (used in budget parser and invoice tools)
 PyMuPDF
