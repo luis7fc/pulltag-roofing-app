@@ -1,5 +1,7 @@
 import streamlit as st
-from auth import login
+import streamlit_authenticator as stauth
+from supabase import create_client
+import os
 from system_monitor import show_system_metrics
 
 # Tab scripts (each must define a `run()` function)
@@ -17,17 +19,40 @@ from tabs import (
 
 st.set_page_config(page_title="Roofing Pulltag System", layout="wide")
 
-# 🔐 Login
-login()
-if not st.session_state.get("user"):
+# 🔐 Supabase + streamlit-authenticator login setup
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+response = supabase.table("users").select("username, password, role").execute()
+users = response.data or []
+
+credentials = {
+    user["username"]: {
+        "name": user["username"],
+        "password": user["password"],
+        "role": user["role"]
+    }
+    for user in users
+}
+
+authenticator = stauth.Authenticate(
+    credentials,
+    cookie_name="roofing_auth",
+    key=os.environ.get("AUTH_COOKIE_KEY", "default_fallback_key"),
+    cookie_expiry_days=30
+)
+
+name, auth_status, username = authenticator.login("Login", "main")
+
+if not auth_status:
     st.stop()
 
-user = st.session_state["user"]
-role = user.get("role")
-username = user.get("username")
+role = credentials[username]["role"]
 
 # Sidebar context
 st.sidebar.markdown(f"**Logged in as:** `{username}` ({role})")
+authenticator.logout("Log out", "sidebar")
 show_system_metrics(role)
 
 # 🔁 Tab Definitions per Role
