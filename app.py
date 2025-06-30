@@ -28,13 +28,16 @@ response = supabase.table("users").select("username, password, role").execute()
 users = response.data or []
 
 credentials = {
-    user["username"]: {
-        "name": user["username"],
-        "password": user["password"],
-        "role": user["role"]
+    "usernames": {
+        user["username"]: {
+            "name": user["username"],
+            "password": user["password"],
+            "role": user["role"]
+        }
+        for user in users
     }
-    for user in users
 }
+
 
 authenticator = stauth.Authenticate(
     credentials,
