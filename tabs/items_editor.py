@@ -1,3 +1,4 @@
+from field_tracker import tracked_input
 import streamlit as st
 from supabase import create_client, Client
 import os
@@ -8,24 +9,27 @@ SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+TAB_NAME = "items_editor"
+
 def run():
     st.title("📦 Items Master Editor")
 
-    # --- Subtabs ---
+    username = st.session_state["user"]["username"]  # from login
+
     subtab = st.tabs([
         "➕ Add / ❌ Delete Items",
         "✏️ Edit Existing Item",
         "📄 View & Filter Table"
     ])
 
-    # --- Subtab 1: Add / Delete ---
+    # --- Add/Delete Subtab ---
     with subtab[0]:
         st.subheader("➕ Add New Item")
 
         with st.form("add_item_form"):
-            item_code = st.text_input("Item Code").strip().upper()
-            description = st.text_input("Description")
-            uom = st.text_input("Unit of Measure")
+            item_code = tracked_input("Item Code", "add_item_code", username, TAB_NAME).strip().upper()
+            description = tracked_input("Description", "add_description", username, TAB_NAME)
+            uom = tracked_input("Unit of Measure", "add_uom", username, TAB_NAME)
             submitted = st.form_submit_button("Add Item")
 
             if submitted:
@@ -47,10 +51,10 @@ def run():
 
         st.divider()
 
+        # Unchanged delete section
         st.subheader("❌ Delete Existing Item")
         items = supabase.table("items_master").select("item_code").order("item_code").execute().data
         item_codes = [item["item_code"] for item in items]
-
         if item_codes:
             selected_item = st.selectbox("Select Item Code to Delete", item_codes)
             if st.button("Delete Selected Item"):
@@ -59,7 +63,7 @@ def run():
         else:
             st.info("No items available to delete.")
 
-    # --- Subtab 2: Edit ---
+    # --- Edit Subtab ---
     with subtab[1]:
         st.subheader("✏️ Edit Existing Item")
 
@@ -69,12 +73,15 @@ def run():
         if df.empty:
             st.info("No items found.")
         else:
-            selected_code = st.selectbox("Select Item Code to Edit", df["item_code"].tolist())
+            selected_code = st.selectbox("Select Item Code to Edit", df["item_code"].tolist(), key="edit_selectbox")
             selected_row = df[df["item_code"] == selected_code].iloc[0]
 
             with st.form("edit_item_form"):
-                new_description = st.text_input("Description", value=selected_row["description"] or "")
-                new_uom = st.text_input("Unit of Measure", value=selected_row["uom"] or "")
+                desc_key = f"edit_desc_{selected_code}"
+                uom_key = f"edit_uom_{selected_code}"
+
+                new_description = tracked_input("Description", desc_key, username, TAB_NAME, default=selected_row["description"] or "")
+                new_uom = tracked_input("Unit of Measure", uom_key, username, TAB_NAME, default=selected_row["uom"] or "")
                 submitted = st.form_submit_button("Update Item")
 
                 if submitted:
@@ -86,23 +93,3 @@ def run():
                         .eq("item_code", selected_code) \
                         .execute()
                     st.success(f"✅ Item '{selected_code}' updated.")
-
-    # --- Subtab 3: View Table ---
-    with subtab[2]:
-        st.subheader("📄 View Items Master Table")
-
-        @st.cache_data(ttl=60)
-        def load_items():
-            result = supabase.table("items_master").select("*").order("item_code").execute()
-            return pd.DataFrame(result.data)
-
-        df = load_items()
-
-        if df.empty:
-            st.info("No items found in the table.")
-        else:
-            st.dataframe(df, use_container_width=True)
-
-        if st.button("🔄 Refresh Table"):
-            st.cache_data.clear()
-            st.rerun()
