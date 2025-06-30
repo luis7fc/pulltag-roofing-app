@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import os
 from supabase import create_client, Client
-from field_tracker import tracked_input  # persistence layer
+from field_tracker import tracked_input  # persistence logic
 
 # --- Constants ---
 TAB_NAME = "roof_editor"
@@ -12,7 +12,7 @@ SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# --- DB Ops ---
+# --- DB Functions ---
 def load_roof_types():
     result = supabase.table("roof_type").select("*").order("roof_type", "asc").execute()
     return result.data if result.data else []
@@ -36,7 +36,7 @@ def delete_roof_type(roof_type, cost_code):
         "cost_code": cost_code
     }).execute()
 
-# --- Main ---
+# --- Tab Entrypoint ---
 def run():
     st.title("🏠 Roof Types Editor")
 
@@ -47,7 +47,7 @@ def run():
     st.markdown(f"Logged in as: `{username}` | Role: `{role}`")
     st.divider()
 
-    # === Table Display ===
+    # === Section: View Table ===
     st.subheader("📋 Current Roof Type Rules")
     data = load_roof_types()
     df = pd.DataFrame(data)
