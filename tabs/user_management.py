@@ -2,16 +2,17 @@ import streamlit as st
 import bcrypt
 import os
 from supabase import create_client, Client
+from field_tracker import tracked_input, tracked_text_area, tracked_selectbox
 
 def run():
-    # Initialize Supabase
     SUPABASE_URL = os.environ.get("SUPABASE_URL")
     SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
     supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
     st.title("👤 User Management")
 
-    # Load users
+    tab = "user_management"
+
     @st.cache_data(ttl=60)
     def load_users():
         result = supabase.table("users").select("*").execute()
@@ -20,23 +21,20 @@ def run():
     users = load_users()
     usernames = [u["username"] for u in users]
 
-    # === View existing users ===
     with st.expander("🔍 View Current Users"):
         st.dataframe(
             [{k: u[k] for k in ["username", "role"]} for u in users],
             use_container_width=True
         )
 
-    # === Action Picker ===
     action = st.radio("Select Action", ["➕ Add New User", "🔧 Update User", "❌ Delete User"])
     st.markdown("---")
 
-    # === Add New User ===
     if action == "➕ Add New User":
         st.subheader("Add New User")
-        new_username = st.text_input("New Username").strip()
-        new_password = st.text_input("New Password", type="password")
-        new_role = st.selectbox("Role", ["admin", "super", "warehouse", "exec"])
+        new_username = tracked_input("New Username", key="new_username", username=st.session_state.get("username", "admin"), tab=tab).strip()
+        new_password = tracked_input("New Password", key="new_password", username=st.session_state.get("username", "admin"), tab=tab, type="password")
+        new_role = tracked_selectbox("Role", ["admin", "super", "warehouse", "exec"], key="new_user_role", username=st.session_state.get("username", "admin"), tab=tab)
 
         if st.button("Create User"):
             if not new_username or not new_password:
@@ -58,15 +56,14 @@ def run():
                 except Exception as e:
                     st.error(f"Failed to create user: {str(e)}")
 
-    # === Update User ===
     elif action == "🔧 Update User":
         st.subheader("Update User Password / Role")
         if not usernames:
             st.info("No users available to update.")
         else:
-            edit_user = st.selectbox("Select user to update", usernames)
-            new_pw = st.text_input("New Password", type="password")
-            new_role_update = st.selectbox("New Role", ["admin", "super", "warehouse", "exec"])
+            edit_user = tracked_selectbox("Select user to update", usernames, key="edit_user", username=st.session_state.get("username", "admin"), tab=tab)
+            new_pw = tracked_input("New Password", key="edit_user_pw", username=st.session_state.get("username", "admin"), tab=tab, type="password")
+            new_role_update = tracked_selectbox("New Role", ["admin", "super", "warehouse", "exec"], key="edit_user_role", username=st.session_state.get("username", "admin"), tab=tab)
 
             if st.button("Update User"):
                 updates = {}
@@ -88,16 +85,15 @@ def run():
                 else:
                     st.info("No changes submitted.")
 
-    # === Delete User ===
     elif action == "❌ Delete User":
         st.subheader("Delete User")
         if not usernames:
             st.info("No users available to delete.")
         else:
-            user_to_delete = st.selectbox("Select user to delete", usernames)
-            current_user = st.session_state.get("user")
+            user_to_delete = tracked_selectbox("Select user to delete", usernames, key="delete_user", username=st.session_state.get("username", "admin"), tab=tab)
+            current_username = st.session_state.get("username")
 
-            if user_to_delete == current_user.get("username"):
+            if user_to_delete == current_username:
                 st.warning("You cannot delete your own account while logged in.")
             else:
                 if st.button("Confirm Delete"):
