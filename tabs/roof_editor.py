@@ -2,12 +2,17 @@ import streamlit as st
 import pandas as pd
 import os
 from supabase import create_client, Client
+from field_tracker import tracked_input  # persistence layer
 
-# Initialize Supabase
+# --- Constants ---
+TAB_NAME = "roof_editor"
+
+# --- Supabase Init ---
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+# --- DB Ops ---
 def load_roof_types():
     result = supabase.table("roof_type").select("*").order("roof_type", "asc").execute()
     return result.data if result.data else []
@@ -31,8 +36,9 @@ def delete_roof_type(roof_type, cost_code):
         "cost_code": cost_code
     }).execute()
 
+# --- Main ---
 def run():
-    st.title("🏗️ Roof Types Editor")
+    st.title("🏠 Roof Types Editor")
 
     user = st.session_state.get("user", {})
     username = user.get("username", "Unknown")
@@ -41,6 +47,7 @@ def run():
     st.markdown(f"Logged in as: `{username}` | Role: `{role}`")
     st.divider()
 
+    # === Table Display ===
     st.subheader("📋 Current Roof Type Rules")
     data = load_roof_types()
     df = pd.DataFrame(data)
@@ -49,9 +56,9 @@ def run():
     st.divider()
     st.subheader("➕ Add New Roof Type Rule")
 
-    with st.form("add_roof_type_form", clear_on_submit=True):
-        roof_type = st.text_input("Roof Type").strip().upper()
-        cost_code = st.text_input("Cost Code").strip().upper()
+    with st.form("add_roof_type_form", clear_on_submit=False):
+        roof_type = tracked_input("Roof Type", "add_roof_type", username, TAB_NAME).strip().upper()
+        cost_code = tracked_input("Cost Code", "add_cost_code", username, TAB_NAME).strip().upper()
         submitted = st.form_submit_button("Add Entry")
 
         if submitted:
@@ -73,9 +80,9 @@ def run():
     st.divider()
     st.subheader("🗑️ Delete Roof Type Rule")
 
-    with st.form("delete_roof_type_form"):
-        roof_type_del = st.text_input("Roof Type to Delete").strip().upper()
-        cost_code_del = st.text_input("Cost Code to Delete").strip().upper()
+    with st.form("delete_roof_type_form", clear_on_submit=False):
+        roof_type_del = tracked_input("Roof Type to Delete", "delete_roof_type", username, TAB_NAME).strip().upper()
+        cost_code_del = tracked_input("Cost Code to Delete", "delete_cost_code", username, TAB_NAME).strip().upper()
         submitted_del = st.form_submit_button("Delete Entry")
 
         if submitted_del:
