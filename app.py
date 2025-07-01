@@ -4,7 +4,7 @@ from supabase import create_client
 import os
 from system_monitor import show_system_metrics
 
-# Tab scripts (unchanged)
+# Tab scripts
 from tabs import (
     community_creation,
     budget_upload,
@@ -22,47 +22,63 @@ st.set_page_config(page_title="Roofing Pulltag System", layout="wide")
 # --- Supabase setup -----------------------------------------------------------
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+if not SUPABASE_URL or not SUPABASE_KEY:
+    st.error("❌ Missing SUPABASE_URL or SUPABASE_KEY environment variables.")
+    st.stop()
 
-# Fetch users and build two dicts: one for stauth, one for roles
-rows = supabase.table("users").select("username,password,role").execute().data or []
+try:
+    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+    rows = supabase.table("users").select("username,password,role").execute().data or []
+except Exception as e:
+    st.error(f"❌ Could not fetch users from Supabase: {e}")
+    st.stop()
 
-# 1. Build credentials for stauth (only name+password)
+# Build credentials for authenticator and a separate role lookup
 stauth_credentials = {}
-# 2. Build lookup for roles
 user_roles = {}
 
 for u in rows:
-    username = u.get("username", "").strip()
-    raw_pw = (u.get("password") or "").replace("\n", "").strip()
-    role = (u.get("role") or "").strip()
+    user = u.get("username", "").strip()
+    pw   = (u.get("password") or "").replace("\n", "").strip()
+    role = (u.get("role")     or "").strip()
+    if user and pw:
+        stauth_credentials[user] = {"name": user, "password": pw}
+        user_roles[user] = role
 
-    # Only include if we have both fields
-    if username and raw_pw:
-        stauth_credentials[username] = {
-            "name": username,
-            "password": raw_pw,
-        }
-        user_roles[username] = role
-
-# --- Streamlit-Authenticator setup -------------------------------------------
-authenticator = stauth.Authenticate(
-    {"usernames": stauth_credentials},
-    cookie_name="roofing_auth",
-    key=os.getenv("AUTH_COOKIE_KEY", "fallback_key"),
-    cookie_expiry_days=30,
-)
-
-# Render the login form and get back (name, status, username) or None
-login_tuple = authenticator.login("main", "Login")
-
-if login_tuple is None:
-    # Form is rendering or waiting for submit
+if not stauth_credentials:
+    st.error("❌ No valid users found in the database.")
     st.stop()
 
-# We only reach here once the user has interacted:
-name, auth_status, username = login_tuple
+# --- Streamlit-Authenticator setup -------------------------------------------
+try:
+    authenticator = stauth.Authenticate(
+        {"usernames": stauth_credentials},
+        cookie_name="roofing_auth",
+        key=os.getenv("AUTH_COOKIE_KEY", "fallback_key"),
+        cookie_expiry_days=30,
+    )
+except Exception as e:
+    st.error(f"❌ Authenticator setup failed: {e}")
+    st.stop()
 
+# --- Authentication flow ------------------------------------------------------
+# Attempt to render the login form
+try:
+    name, auth_status, username = authenticator.login("main")
+except TypeError:
+    # Fallback if new version returns None instead of tuple
+    authenticator.login("main")
+    auth_status = st.session_state.get("authentication_status")
+    name        = st.session_state.get("name")
+    username    = st.session_state.get("username")
+
+# If still not defined, get from session_state
+if auth_status is None:
+    auth_status = st.session_state.get("authentication_status")
+    name        = st.session_state.get("name")
+    username    = st.session_state.get("username")
+
+# Handle authentication outcomes
 if auth_status is False:
     st.error("❌ Incorrect username or password.")
     st.stop()
@@ -70,54 +86,42 @@ elif auth_status is None:
     st.warning("⚠ Please enter your credentials.")
     st.stop()
 
-# --- User is authenticated! --------------------------------------------
+# --- Post-login setup --------------------------------------------------------
 role = user_roles.get(username, "")
-
-# Debug output (moved here, only shown after login)
-if os.getenv("DEBUG_MODE") == "true":  # Only show in debug mode
-    st.write("🔐 stauth credentials:", stauth_credentials)
-    st.write("👥 user roles map:", user_roles)
-
-st.write(f"✅ Logged in as `{username}` with role `{role}`")
-
-# Sidebar context + logout
 st.sidebar.markdown(f"**Logged in as:** `{username}` ({role})")
 authenticator.logout("Log out", "sidebar")
 show_system_metrics(role)
 
-# --- Define tabs per role ----------------------------------------------------
+# Define tabs per role
 base_tabs = {
-    "🏘️ Community Creation": community_creation.run,
-    "📄 Budget Upload": budget_upload.run,
+    "🏘️ Community Creation":      community_creation.run,
+    "📄 Budget Upload":           budget_upload.run,
     "📊 Reporting & Sage Export": reporting.run,
 }
-
 exec_tabs = {
     **base_tabs,
-    "📦 Super Request": super_request.run,
-    "🛠️ Warehouse Kitting": warehouse_kitting.run,
-    "🔁 Backorder Kitting": backorder_kitting.run,
-    "👤 User Management": user_management.run,
-    "🧾 Items Master Editor": items_editor.run,
-    "🏠 Roof Types Editor": roof_editor.run,
+    "📦 Super Request":        super_request.run,
+    "🛠️ Warehouse Kitting":    warehouse_kitting.run,
+    "🔁 Backorder Kitting":     backorder_kitting.run,
+    "👤 User Management":       user_management.run,
+    "🧾 Items Master Editor":   items_editor.run,
+    "🏠 Roof Types Editor":     roof_editor.run,
 }
-
 tabs_by_role = {
-    "exec": exec_tabs,
-    "admin": base_tabs,
-    "super": {"📦 Super Request": super_request.run},
+    "exec":      exec_tabs,
+    "admin":     base_tabs,
+    "super":     {"📦 Super Request": super_request.run},
     "warehouse": {
         "🛠️ Warehouse Kitting": warehouse_kitting.run,
-        "🔁 Backorder Kitting": backorder_kitting.run,
+        "🔁 Backorder Kitting":  backorder_kitting.run,
     },
 }
 
 available = tabs_by_role.get(role, {})
-st.write("📂 Available tabs:", list(available.keys()))
+if not available:
+    st.error(f"🚫 Role '{role}' does not have access to any tabs.")
+    st.stop()
 
-if available:
-    st.sidebar.title("📚 Menu")
-    selection = st.sidebar.radio("Go to", list(available.keys()))
-    available[selection]()
-else:
-    st.error("🚫 You do not have access to this app.")
+st.sidebar.title("📚 Menu")
+choice = st.sidebar.radio("Go to", list(available.keys()))
+available[choice]()
