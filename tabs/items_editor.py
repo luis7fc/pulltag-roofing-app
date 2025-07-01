@@ -14,7 +14,7 @@ TAB_NAME = "items_editor"
 def run():
     st.title("📦 Items Master Editor")
 
-    username = st.session_state["user"]["username"]  # from login
+    username = st.session_state.get("username")
 
     subtab = st.tabs([
         "➕ Add / ❌ Delete Items",
