@@ -4,6 +4,7 @@ from supabase import create_client
 import os
 from system_monitor import show_system_metrics
 
+# Tab scripts
 from tabs import (
     community_creation,
     budget_upload,
@@ -17,53 +18,72 @@ from tabs import (
 )
 
 st.set_page_config(page_title="Roofing Pulltag System", layout="wide")
-st.write("🚦 Script reached top-level.")  # Debug
 
-# --- Supabase setup ---
+# --- Supabase setup -----------------------------------------------------------
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# Fetch & sanitize users
-users = supabase.table("users").select("username,password,role").execute().data or []
-credentials = {
-    "usernames": {
-        u["username"]: {
-            "name":     u["username"],
-            "password": (u.get("password") or "").replace("\n", "").strip(),
-            "role":     (u.get("role")     or "").strip(),
-        }
-        for u in users
-    }
-}
-st.write("🔐 Loaded credentials:", credentials)
+# Fetch users and build two dicts: one for stauth, one for roles
+rows = supabase.table("users").select("username,password,role").execute().data or []
 
-# --- Authenticator setup ---
+# 1. Build credentials for stauth (only name+password)
+stauth_credentials = {}
+# 2. Build lookup for roles
+user_roles = {}
+
+for u in rows:
+    username = u.get("username", "").strip()
+    raw_pw   = (u.get("password") or "").replace("\n", "").strip()
+    role     = (u.get("role")     or "").strip()
+
+    # only include if we have both fields
+    if username and raw_pw:
+        stauth_credentials[username] = {
+            "name":     username,
+            "password": raw_pw,
+        }
+        user_roles[username] = role
+
+# Debug
+st.write("🔐 stauth credentials:", stauth_credentials)
+st.write("👥 user roles map:", user_roles)
+
+# --- Streamlit-Authenticator setup -------------------------------------------
 authenticator = stauth.Authenticate(
-    credentials,
+    {"usernames": stauth_credentials},
     cookie_name="roofing_auth",
     key=os.getenv("AUTH_COOKIE_KEY", "fallback_key"),
     cookie_expiry_days=30,
 )
 
-# 🔐 Render login form with correct signature: (location, label)
-name, auth_status, username = authenticator.login("main", "Login")
+# Render the login form and get back (name, status, username) or None
+login_tuple = authenticator.login("main", "Login")
+
+if login_tuple is None:
+    # Form is rendering or waiting for submit
+    st.stop()
+
+# We only reach here once the user has interacted:
+name, auth_status, username = login_tuple
 
 if auth_status is False:
-    st.error("Incorrect username or password.")
+    st.error("❌ Incorrect username or password.")
     st.stop()
 elif auth_status is None:
-    st.warning("Please enter your credentials.")
+    st.warning("⚠ Please enter your credentials.")
     st.stop()
 
-# --- Role & tabs ---
-role = credentials["usernames"][username]["role"]
-st.write(f"✅ Authenticated as `{username}` with role `{role}`")
+# --- User is authenticated! --------------------------------------------
+role = user_roles.get(username, "")
+st.write(f"✅ Logged in as `{username}` with role `{role}`")
 
+# Sidebar context + logout
 st.sidebar.markdown(f"**Logged in as:** `{username}` ({role})")
 authenticator.logout("Log out", "sidebar")
 show_system_metrics(role)
 
+# --- Define tabs per role ----------------------------------------------------
 base_tabs = {
     "🏘️ Community Creation":      community_creation.run,
     "📄 Budget Upload":           budget_upload.run,
@@ -90,12 +110,12 @@ tabs_by_role = {
     },
 }
 
-tabs = tabs_by_role.get(role, {})
-st.write("📂 Tabs available:", list(tabs.keys()))  # Debug
+available = tabs_by_role.get(role, {})
+st.write("📂 Available tabs:", list(available.keys()))
 
-if tabs:
+if available:
     st.sidebar.title("📚 Menu")
-    choice = st.sidebar.radio("Go to", list(tabs.keys()))
-    tabs[choice]()
+    selection = st.sidebar.radio("Go to", list(available.keys()))
+    available[selection]()
 else:
-    st.error("You do not have access to this app.")
+    st.error("🚫 You do not have access to this app.")
