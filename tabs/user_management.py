@@ -10,8 +10,8 @@ def run():
     supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
     st.title("👤 User Management")
-
     tab = "user_management"
+    username = st.session_state.get("username", "admin")
 
     @st.cache_data(ttl=60)
     def load_users():
@@ -32,9 +32,9 @@ def run():
 
     if action == "➕ Add New User":
         st.subheader("Add New User")
-        new_username = tracked_input("New Username", key="new_username", username=st.session_state.get("username", "admin"), tab=tab).strip()
-        new_password = tracked_input("New Password", key="new_password", username=st.session_state.get("username", "admin"), tab=tab, type="password")
-        new_role = tracked_selectbox("Role", ["admin", "super", "warehouse", "exec"], key="new_user_role", username=st.session_state.get("username", "admin"), tab=tab)
+        new_username = tracked_input("New Username", key="new_username", username=username, tab=tab, supabase=supabase).strip()
+        new_password = tracked_input("New Password", key="new_password", username=username, tab=tab, supabase=supabase, type="password")
+        new_role = tracked_selectbox("Role", ["admin", "super", "warehouse", "exec"], key="new_user_role", username=username, tab=tab, supabase=supabase)
 
         if st.button("Create User"):
             if not new_username or not new_password:
@@ -61,9 +61,9 @@ def run():
         if not usernames:
             st.info("No users available to update.")
         else:
-            edit_user = tracked_selectbox("Select user to update", usernames, key="edit_user", username=st.session_state.get("username", "admin"), tab=tab)
-            new_pw = tracked_input("New Password", key="edit_user_pw", username=st.session_state.get("username", "admin"), tab=tab, type="password")
-            new_role_update = tracked_selectbox("New Role", ["admin", "super", "warehouse", "exec"], key="edit_user_role", username=st.session_state.get("username", "admin"), tab=tab)
+            edit_user = tracked_selectbox("Select user to update", usernames, key="edit_user", username=username, tab=tab, supabase=supabase)
+            new_pw = tracked_input("New Password", key="edit_user_pw", username=username, tab=tab, supabase=supabase, type="password")
+            new_role_update = tracked_selectbox("New Role", ["admin", "super", "warehouse", "exec"], key="edit_user_role", username=username, tab=tab, supabase=supabase)
 
             if st.button("Update User"):
                 updates = {}
@@ -90,8 +90,8 @@ def run():
         if not usernames:
             st.info("No users available to delete.")
         else:
-            user_to_delete = tracked_selectbox("Select user to delete", usernames, key="delete_user", username=st.session_state.get("username", "admin"), tab=tab)
-            current_username = st.session_state.get("username")
+            user_to_delete = tracked_selectbox("Select user to delete", usernames, key="delete_user", username=username, tab=tab, supabase=supabase)
+            current_username = username
 
             if user_to_delete == current_username:
                 st.warning("You cannot delete your own account while logged in.")
