@@ -5,13 +5,19 @@ import os
 from system_monitor import show_system_metrics
 
 from tabs import (
-    community_creation, budget_upload, reporting,
-    super_request, warehouse_kitting, backorder_kitting,
-    user_management, items_editor, roof_editor,
+    community_creation,
+    budget_upload,
+    reporting,
+    super_request,
+    warehouse_kitting,
+    backorder_kitting,
+    user_management,
+    items_editor,
+    roof_editor,
 )
 
 st.set_page_config(page_title="Roofing Pulltag System", layout="wide")
-st.write("🚦 Script reached top-level.")
+st.write("🚦 Script reached top-level.")  # Debug
 
 # --- Supabase setup ---
 SUPABASE_URL = os.getenv("SUPABASE_URL")
@@ -40,14 +46,8 @@ authenticator = stauth.Authenticate(
     cookie_expiry_days=30,
 )
 
-# 🔐 Render login form (label first, then location) — **this is the fix** 👇
-login_result = authenticator.login("Login", "main")
-
-if login_result is not None:
-    name, auth_status, username = login_result
-else:
-    st.error("Login failed to load. Check credentials or Supabase response.")
-    st.stop()
+# 🔐 Render login form with correct signature: (location, label)
+name, auth_status, username = authenticator.login("main", "Login")
 
 if auth_status is False:
     st.error("Incorrect username or password.")
@@ -58,7 +58,8 @@ elif auth_status is None:
 
 # --- Role & tabs ---
 role = credentials["usernames"][username]["role"]
-st.write(f"✅ Authenticated as `{username}` ({role})")
+st.write(f"✅ Authenticated as `{username}` with role `{role}`")
+
 st.sidebar.markdown(f"**Logged in as:** `{username}` ({role})")
 authenticator.logout("Log out", "sidebar")
 show_system_metrics(role)
@@ -68,6 +69,7 @@ base_tabs = {
     "📄 Budget Upload":           budget_upload.run,
     "📊 Reporting & Sage Export": reporting.run,
 }
+
 exec_tabs = {
     **base_tabs,
     "📦 Super Request":        super_request.run,
@@ -77,6 +79,7 @@ exec_tabs = {
     "🧾 Items Master Editor":   items_editor.run,
     "🏠 Roof Types Editor":     roof_editor.run,
 }
+
 tabs_by_role = {
     "exec":      exec_tabs,
     "admin":     base_tabs,
@@ -88,7 +91,7 @@ tabs_by_role = {
 }
 
 tabs = tabs_by_role.get(role, {})
-st.write("📂 Tabs available:", list(tabs.keys()))
+st.write("📂 Tabs available:", list(tabs.keys()))  # Debug
 
 if tabs:
     st.sidebar.title("📚 Menu")
