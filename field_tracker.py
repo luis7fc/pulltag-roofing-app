@@ -8,8 +8,11 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 
 def _load_from_supabase(username, tab, key):
-    response = supabase.table("drafts").select("value").eq("username", username).eq("tab", tab).eq("key", key).single().execute()
-    return response.data["value"] if response.data else ""
+    response = supabase.table("drafts").select("value")\
+        .eq("username", username).eq("tab", tab).eq("key", key)\
+        .limit(1).execute()
+    return response.data[0]["value"] if response.data else ""
+
 
 
 def _save_to_supabase(username, tab, key, value):
