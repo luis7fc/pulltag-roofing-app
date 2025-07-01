@@ -52,19 +52,14 @@ authenticator = stauth.Authenticate(
     cookie_expiry_days=30,
 )
 
-login_result = authenticator.login("main", "Login")
+# 🔐 Render login form and handle authentication
+name, auth_status, username = authenticator.login("main", "Login")
 
-if login_result:
-    name, auth_status, username = login_result
-
-    if auth_status is False:
-        st.error("Incorrect username or password.")
-        st.stop()
-    elif auth_status is None:
-        st.warning("Please enter your credentials.")
-        st.stop()
-else:
-    st.info("Please enter your username and password.")
+if auth_status is False:
+    st.error("Incorrect username or password.")
+    st.stop()
+elif auth_status is None:
+    st.warning("Please enter your credentials.")
     st.stop()
 
 # --- Role-based tab logic ---
