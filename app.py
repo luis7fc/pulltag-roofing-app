@@ -4,7 +4,7 @@ from supabase import create_client
 import os
 from system_monitor import show_system_metrics
 
-# Tab scripts
+# Tab scripts (unchanged)
 from tabs import (
     community_creation,
     budget_upload,
@@ -34,20 +34,16 @@ user_roles = {}
 
 for u in rows:
     username = u.get("username", "").strip()
-    raw_pw   = (u.get("password") or "").replace("\n", "").strip()
-    role     = (u.get("role")     or "").strip()
+    raw_pw = (u.get("password") or "").replace("\n", "").strip()
+    role = (u.get("role") or "").strip()
 
-    # only include if we have both fields
+    # Only include if we have both fields
     if username and raw_pw:
         stauth_credentials[username] = {
-            "name":     username,
+            "name": username,
             "password": raw_pw,
         }
         user_roles[username] = role
-
-# Debug
-st.write("🔐 stauth credentials:", stauth_credentials)
-st.write("👥 user roles map:", user_roles)
 
 # --- Streamlit-Authenticator setup -------------------------------------------
 authenticator = stauth.Authenticate(
@@ -76,6 +72,12 @@ elif auth_status is None:
 
 # --- User is authenticated! --------------------------------------------
 role = user_roles.get(username, "")
+
+# Debug output (moved here, only shown after login)
+if os.getenv("DEBUG_MODE") == "true":  # Only show in debug mode
+    st.write("🔐 stauth credentials:", stauth_credentials)
+    st.write("👥 user roles map:", user_roles)
+
 st.write(f"✅ Logged in as `{username}` with role `{role}`")
 
 # Sidebar context + logout
@@ -85,28 +87,28 @@ show_system_metrics(role)
 
 # --- Define tabs per role ----------------------------------------------------
 base_tabs = {
-    "🏘️ Community Creation":      community_creation.run,
-    "📄 Budget Upload":           budget_upload.run,
+    "🏘️ Community Creation": community_creation.run,
+    "📄 Budget Upload": budget_upload.run,
     "📊 Reporting & Sage Export": reporting.run,
 }
 
 exec_tabs = {
     **base_tabs,
-    "📦 Super Request":        super_request.run,
-    "🛠️ Warehouse Kitting":    warehouse_kitting.run,
-    "🔁 Backorder Kitting":     backorder_kitting.run,
-    "👤 User Management":       user_management.run,
-    "🧾 Items Master Editor":   items_editor.run,
-    "🏠 Roof Types Editor":     roof_editor.run,
+    "📦 Super Request": super_request.run,
+    "🛠️ Warehouse Kitting": warehouse_kitting.run,
+    "🔁 Backorder Kitting": backorder_kitting.run,
+    "👤 User Management": user_management.run,
+    "🧾 Items Master Editor": items_editor.run,
+    "🏠 Roof Types Editor": roof_editor.run,
 }
 
 tabs_by_role = {
-    "exec":      exec_tabs,
-    "admin":     base_tabs,
-    "super":     {"📦 Super Request": super_request.run},
+    "exec": exec_tabs,
+    "admin": base_tabs,
+    "super": {"📦 Super Request": super_request.run},
     "warehouse": {
         "🛠️ Warehouse Kitting": warehouse_kitting.run,
-        "🔁 Backorder Kitting":  backorder_kitting.run,
+        "🔁 Backorder Kitting": backorder_kitting.run,
     },
 }
 
