@@ -15,6 +15,9 @@ def run():
     st.title("📦 Items Master Editor")
 
     username = st.session_state.get("username")
+    if not username:
+        st.error("User not authenticated.")
+        st.stop()
 
     subtab = st.tabs([
         "➕ Add / ❌ Delete Items",
@@ -27,9 +30,9 @@ def run():
         st.subheader("➕ Add New Item")
 
         with st.form("add_item_form"):
-            item_code = tracked_input("Item Code", "add_item_code", username, TAB_NAME).strip().upper()
-            description = tracked_input("Description", "add_description", username, TAB_NAME)
-            uom = tracked_input("Unit of Measure", "add_uom", username, TAB_NAME)
+            item_code = tracked_input("Item Code", "add_item_code", username, TAB_NAME, supabase).strip().upper()
+            description = tracked_input("Description", "add_description", username, TAB_NAME, supabase)
+            uom = tracked_input("Unit of Measure", "add_uom", username, TAB_NAME, supabase)
             submitted = st.form_submit_button("Add Item")
 
             if submitted:
@@ -51,7 +54,6 @@ def run():
 
         st.divider()
 
-        # Unchanged delete section
         st.subheader("❌ Delete Existing Item")
         items = supabase.table("items_master").select("item_code").order("item_code").execute().data
         item_codes = [item["item_code"] for item in items]
@@ -80,8 +82,8 @@ def run():
                 desc_key = f"edit_desc_{selected_code}"
                 uom_key = f"edit_uom_{selected_code}"
 
-                new_description = tracked_input("Description", desc_key, username, TAB_NAME, default=selected_row["description"] or "")
-                new_uom = tracked_input("Unit of Measure", uom_key, username, TAB_NAME, default=selected_row["uom"] or "")
+                new_description = tracked_input("Description", desc_key, username, TAB_NAME, supabase, default=selected_row["description"] or "")
+                new_uom = tracked_input("Unit of Measure", uom_key, username, TAB_NAME, supabase, default=selected_row["uom"] or "")
                 submitted = st.form_submit_button("Update Item")
 
                 if submitted:
