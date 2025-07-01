@@ -96,7 +96,8 @@ def run():
             "Search job_number or roof_type",
             key="search_query",
             username=username,
-            tab="community_creation"
+            tab="community_creation",
+            supabase=supabase
         )
 
         if st.button("🔍 Search"):
@@ -176,12 +177,12 @@ def run():
     with tab3:
         st.subheader("🧾 Manually Build New Community")
 
-        job  = tracked_input("Job Number",    "manual_job",  username, "community_creation")
-        roof = tracked_input("Roof Type",     "manual_roof", username, "community_creation")
-        cost = tracked_input("Cost Code",     "manual_cost", username, "community_creation")
-        item = tracked_input("Item Code",     "manual_item", username, "community_creation")
-        uom  = tracked_input("UOM",           "manual_uom",  username, "community_creation")
-        qty  = tracked_input("Qty",           "manual_qty",  username, "community_creation")
+        job  = tracked_input("Job Number",    "manual_job",  username, "community_creation", supabase)
+        roof = tracked_input("Roof Type",     "manual_roof", username, "community_creation", supabase)
+        cost = tracked_input("Cost Code",     "manual_cost", username, "community_creation", supabase)
+        item = tracked_input("Item Code",     "manual_item", username, "community_creation", supabase)
+        uom  = tracked_input("UOM",           "manual_uom",  username, "community_creation", supabase)
+        qty  = tracked_input("Qty",           "manual_qty",  username, "community_creation", supabase)
 
         if st.button("➕ Add Row"):
             if not (job and roof and cost):
