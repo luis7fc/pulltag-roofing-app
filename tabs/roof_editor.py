@@ -14,8 +14,14 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # --- DB Functions ---
 def load_roof_types():
-    result = supabase.table("roof_type").select("*").order("roof_type", "asc").execute()
-    return result.data if result.data else []
+    # default is ascending, so this already works …
+    result = (
+        supabase.table("roof_type")
+        .select("*")
+        .order("roof_type")
+    ).execute()
+    return result.data or []
+
 
 def roof_type_exists(roof_type, cost_code):
     result = supabase.table("roof_type").select("*").match({
