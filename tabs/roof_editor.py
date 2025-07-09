@@ -61,12 +61,16 @@ def run():
 
     st.divider()
     st.subheader("➕ Add New Roof Type Rule")
-
+    #here
     with st.form("add_roof_type_form", clear_on_submit=False):
-        roof_type = tracked_input("Roof Type", "add_roof_type", username, TAB_NAME).strip().upper()
-        cost_code = tracked_input("Cost Code", "add_cost_code", username, TAB_NAME).strip().upper()
+        roof_type = tracked_input("Roof Type",  "add_roof_type",
+                                  username, TAB_NAME, supabase
+                                 ).strip().upper()
+        cost_code = tracked_input("Cost Code", "add_cost_code",
+                                  username, TAB_NAME, supabase
+                                 ).strip().upper()
         submitted = st.form_submit_button("Add Entry")
-
+    
         if submitted:
             if not roof_type or not cost_code:
                 st.warning("Both fields are required.")
@@ -87,9 +91,14 @@ def run():
     st.subheader("🗑️ Delete Roof Type Rule")
 
     with st.form("delete_roof_type_form", clear_on_submit=False):
-        roof_type_del = tracked_input("Roof Type to Delete", "delete_roof_type", username, TAB_NAME).strip().upper()
-        cost_code_del = tracked_input("Cost Code to Delete", "delete_cost_code", username, TAB_NAME).strip().upper()
+        roof_type_del = tracked_input("Roof Type to Delete",  "delete_roof_type",
+                                      username, TAB_NAME, supabase
+                                     ).strip().upper()
+        cost_code_del = tracked_input("Cost Code to Delete", "delete_cost_code",
+                                      username, TAB_NAME, supabase
+                                     ).strip().upper()
         submitted_del = st.form_submit_button("Delete Entry")
+    
 
         if submitted_del:
             if not roof_type_del or not cost_code_del:
