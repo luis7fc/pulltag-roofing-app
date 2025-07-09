@@ -95,3 +95,46 @@ def run():
                         .eq("item_code", selected_code) \
                         .execute()
                     st.success(f"✅ Item '{selected_code}' updated.")
+
+    # --- View & Filter Subtab ---
+    with subtab[2]:
+        st.subheader("📄 View & Filter Items Master")
+
+        # ⏳ cache the query so the page is snappy
+        @st.cache_data(ttl=300)
+        def load_items():
+            res = (
+                supabase
+                .table("items_master")
+                .select("*")
+                .order("item_code")        # A→Z
+                .execute()
+            )
+            return pd.DataFrame(res.data or [])
+
+        df = load_items()
+
+        # 🔍 quick filter
+        filter_code = st.text_input(
+            "Filter by Item Code (supports partial match)", ""
+        ).strip().upper()
+
+        if filter_code:
+            filtered = df[df["item_code"].str.contains(filter_code, na=False)]
+        else:
+            filtered = df
+
+        st.metric("Rows", len(filtered))
+        st.dataframe(filtered, use_container_width=True)
+
+        # 💾 optional CSV export
+        csv = filtered.to_csv(index=False).encode("utf-8")
+        st.download_button(
+            "Download CSV", csv, file_name="items_master_filtered.csv"
+        )
+
+        # 🔄 manual refresh
+        if st.button("🔄 Refresh"):
+            st.cache_data.clear()          # wipe cache
+            st.rerun()
+
