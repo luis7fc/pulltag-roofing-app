@@ -15,7 +15,17 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 # Load mock or production data
 @st.cache_data
 def load_communities():
-    return pd.read_csv("/mnt/data/communities_rows.csv")
+    try:
+        res = supabase.table("communities").select("*").execute()
+        if res.data:
+            return pd.DataFrame(res.data)
+        else:
+            st.warning("Communities table is empty.")
+            return pd.DataFrame()
+    except Exception as e:
+        st.error(f"Failed to load communities: {e}")
+        return pd.DataFrame()
+
 
 @st.cache_data
 def load_items_master():
