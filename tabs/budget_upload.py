@@ -49,12 +49,12 @@ def compute_quantity(units_budget, logic):
                 return math.ceil(units_budget / divisor)
             else:
                 return math.ceil(units_budget)
-        elif str(logic).strip().isdigit():
-            return int(logic)
         else:
-            return None
+            # Try to cast any other numeric value (int or float)
+            return float(logic)
     except:
         return None
+
 
 def run():
     st.title("📄 Budget Upload")
