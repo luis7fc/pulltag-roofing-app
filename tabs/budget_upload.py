@@ -74,13 +74,14 @@ def run():
             for (job_number, lot_number), lot_df in grouped:
                 extracted_cost_codes = set(lot_df['Cost Code'].str.upper())
 
+                #here!
                 matched_roof_type = None
                 for rt in roof_type_df['roof_type'].unique():
                     roof_codes = set(roof_type_df[roof_type_df['roof_type'] == rt]['cost_code'].str.upper())
-                    if extracted_cost_codes.issubset(roof_codes):
+                    if extracted_cost_codes & roof_codes:  # <-- matches at least one
                         matched_roof_type = rt
                         break
-
+                        
                 if not matched_roof_type:
                     st.warning(f"No roof type match for Job {job_number}, Lot {lot_number}")
                     continue
