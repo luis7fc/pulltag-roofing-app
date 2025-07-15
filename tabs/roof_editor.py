@@ -61,7 +61,7 @@ def run():
 
     st.divider()
     st.subheader("➕ Add New Roof Type Rule")
-    #here
+    
     with st.form("add_roof_type_form", clear_on_submit=False):
         roof_type = tracked_input("Roof Type",  "add_roof_type",
                                   username, TAB_NAME, supabase
@@ -79,11 +79,13 @@ def run():
             else:
                 try:
                     response = add_roof_type(roof_type, cost_code)
-                    if response.status_code == 201:
+                    
+                    if response.error is None:
                         st.success(f"✅ Added `{roof_type} - {cost_code}`")
                         st.rerun()
                     else:
-                        st.error(f"Supabase error {response.status_code}: {response.data}")
+                        st.error(f"Supabase error: {response.error.message}")
+                        
                 except Exception as e:
                     st.error(f"Error: {e}")
 
@@ -106,11 +108,13 @@ def run():
             else:
                 try:
                     response = delete_roof_type(roof_type_del, cost_code_del)
-                    if response.status_code in [200, 204]:
+                    
+                    if response.error is None:
                         st.success(f"🗑️ Deleted `{roof_type_del} - {cost_code_del}`")
                         st.rerun()
                     else:
-                        st.error(f"Supabase error {response.status_code}: {response.data}")
+                        st.error(f"Supabase error: {response.error.message}")
+
                 except Exception as e:
                     st.error(f"Error: {e}")
 
