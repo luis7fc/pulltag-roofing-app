@@ -14,7 +14,6 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # --- DB Functions ---
 def load_roof_types():
-    # default is ascending, so this already works …
     result = (
         supabase.table("roof_type")
         .select("*")
@@ -30,17 +29,20 @@ def roof_type_exists(roof_type, cost_code):
     }).execute()
     return len(result.data) > 0
 
+
 def add_roof_type(roof_type, cost_code):
     return supabase.table("roof_type").insert({
         "roof_type": roof_type,
         "cost_code": cost_code
     }).execute()
 
+
 def delete_roof_type(roof_type, cost_code):
     return supabase.table("roof_type").delete().match({
         "roof_type": roof_type,
         "cost_code": cost_code
     }).execute()
+
 
 # --- Tab Entrypoint ---
 def run():
@@ -61,16 +63,14 @@ def run():
 
     st.divider()
     st.subheader("➕ Add New Roof Type Rule")
-    
+
     with st.form("add_roof_type_form", clear_on_submit=False):
-        roof_type = tracked_input("Roof Type",  "add_roof_type",
-                                  username, TAB_NAME, supabase
-                                 ).strip().upper()
+        roof_type = tracked_input("Roof Type", "add_roof_type",
+                                  username, TAB_NAME, supabase).strip().upper()
         cost_code = tracked_input("Cost Code", "add_cost_code",
-                                  username, TAB_NAME, supabase
-                                 ).strip().upper()
+                                  username, TAB_NAME, supabase).strip().upper()
         submitted = st.form_submit_button("Add Entry")
-    
+
         if submitted:
             if not roof_type or not cost_code:
                 st.warning("Both fields are required.")
@@ -79,28 +79,23 @@ def run():
             else:
                 try:
                     response = add_roof_type(roof_type, cost_code)
-                    
-                    if response.error is None:
+                    if response.data:
                         st.success(f"✅ Added `{roof_type} - {cost_code}`")
                         st.rerun()
                     else:
-                        st.error(f"Supabase error: {response.error.message}")
-                        
+                        st.error(f"Insert failed. Full response: {response}")
                 except Exception as e:
-                    st.error(f"Error: {e}")
+                    st.error(f"Unexpected error: {e}")
 
     st.divider()
     st.subheader("🗑️ Delete Roof Type Rule")
 
     with st.form("delete_roof_type_form", clear_on_submit=False):
-        roof_type_del = tracked_input("Roof Type to Delete",  "delete_roof_type",
-                                      username, TAB_NAME, supabase
-                                     ).strip().upper()
+        roof_type_del = tracked_input("Roof Type to Delete", "delete_roof_type",
+                                      username, TAB_NAME, supabase).strip().upper()
         cost_code_del = tracked_input("Cost Code to Delete", "delete_cost_code",
-                                      username, TAB_NAME, supabase
-                                     ).strip().upper()
+                                      username, TAB_NAME, supabase).strip().upper()
         submitted_del = st.form_submit_button("Delete Entry")
-    
 
         if submitted_del:
             if not roof_type_del or not cost_code_del:
@@ -108,15 +103,13 @@ def run():
             else:
                 try:
                     response = delete_roof_type(roof_type_del, cost_code_del)
-                    
-                    if response.error is None:
+                    if response.data:
                         st.success(f"🗑️ Deleted `{roof_type_del} - {cost_code_del}`")
                         st.rerun()
                     else:
-                        st.error(f"Supabase error: {response.error.message}")
-
+                        st.error(f"Delete failed. Full response: {response}")
                 except Exception as e:
-                    st.error(f"Error: {e}")
+                    st.error(f"Unexpected error: {e}")
 
     if st.button("🔄 Refresh Page"):
         st.rerun()
