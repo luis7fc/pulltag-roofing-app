@@ -9,7 +9,7 @@ import tempfile
 
 def run():
     st.header('Super Request')
-    user = st.session_state.get("username", {}).get("username", "")
+    user = st.session_state.get("username")
     
     # --- PDF Generation Function ---
     def generate_pulltag_pdf(dataframe, filename="pulltag_request_summary.pdf"):
