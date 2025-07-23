@@ -204,15 +204,14 @@ def run():
                     progress.progress(0.6)
                     st.session_state.results = results
                     st.session_state.to_update = to_update
-
-                    
-                    except Exception as e:
-                        st.error(f"{labels['error']}: {str(e)}")
-                        # Add errors to results
-                        for _, row in valid_entries.iterrows():
-                            results.append((row["job_number"], row["lot_number"], f"{labels['error']}: Failed to process"))
-                        st.session_state.results = results
-                        progress.progress(1.0)
+                #here    
+                except Exception as e:
+                    st.error(f"{labels['error']}: {e}")
+                    # record failures so UI still shows something
+                    fail = [(r["job_number"], r["lot_number"], f"{labels['error']}: Failed to process")
+                            for _, r in valid_entries.iterrows()]
+                    st.session_state.results = fail
+                    progress.progress(1.0)
 
     # Always display results if available
     if 'results' in st.session_state:
