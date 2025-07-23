@@ -135,62 +135,77 @@ def run():
         )
 
         submitted = st.form_submit_button(labels['submit'])
-
+    
+    #here
     if submitted:
         partially_filled = job_entries.dropna(how="all")
         if partially_filled.empty:
             st.warning(labels['no_entries'])
-                
         else:
-            valid_entries = partially_filled.dropna()
-            invalid_rows = partially_filled[~partially_filled.index.isin(valid_entries.index)]
-
+            # --- normalize user entries early ---
+            valid_entries = partially_filled.dropna().copy()
+            invalid_rows  = partially_filled.loc[~partially_filled.index.isin(valid_entries.index)]
+    
+            # cast + strip
+            valid_entries["job_number"] = valid_entries["job_number"].astype(str).str.strip()
+            valid_entries["lot_number"] = (
+                valid_entries["lot_number"]
+                .apply(lambda x: str(int(x)) if pd.notna(x) else "")
+                .str.strip()
+            )
+    
             if not invalid_rows.empty:
                 st.warning(f"⚠️ {len(invalid_rows)} row(s) have missing job or lot number.")
                 st.dataframe(invalid_rows)
-                
+    
+            # duplicates AFTER normalization
             duplicate_mask = valid_entries.duplicated(["job_number", "lot_number"])
             if duplicate_mask.any():
                 st.error(labels['duplicates_found'])
                 st.dataframe(valid_entries[duplicate_mask])
             else:
-                results = []
-                to_update = []
+                results, to_update = [], []
                 with st.spinner(f"{labels['processing']} {len(valid_entries)}..."):
                     progress = st.progress(0)
-                    try:
-                        # Collect unique jobs for batch query
-                        jobs = valid_entries["job_number"].unique().tolist()
-                        # Batch query all matching by job_number
-                        query = supabase.table("pulltags").select("job_number, lot_number, status").in_("job_number", jobs).execute()
-                        db_data = pd.DataFrame(query.data)
-                        progress.progress(0.3)  # Query done
+    
+                    # fetch db rows
+                    query = supabase.table("pulltags") \
+                        .select("job_number, lot_number, status") \
+                        .in_("job_number", valid_entries["job_number"].unique().tolist()) \
+                        .execute()
+    
+                    db_data = pd.DataFrame(query.data).copy()
+                    db_data["job_number"] = db_data["job_number"].astype(str).str.strip()
+                    db_data["lot_number"] = db_data["lot_number"].astype(str).str.strip()
+    
+                    progress.progress(0.3)
+    
+                    for _, row in valid_entries.iterrows():
+                        job, lot = row["job_number"], row["lot_number"]
+                        matching = db_data[(db_data["job_number"] == job) & (db_data["lot_number"] == lot)]
+                        statuses = set(matching["status"]) if not matching.empty else set()
+    
+                        if not statuses:
+                            results.append((job, lot, labels['none_found']))
+                        elif "kitted" in statuses:
+                            results.append((job, lot, labels['already_kitted']))
+                        elif "requested" in statuses:
+                            results.append((job, lot, labels['already_requested']))
+                        elif "pending" in statuses:
+                            results.append((job, lot, labels['submitted']))
+                            to_update.append({
+                                "job_number": job,
+                                "lot_number": lot,
+                                "requested_by": st.session_state["username"]
+                            })
+                        else:
+                            results.append((job, lot, labels['invalid_status']))
+    
+                    progress.progress(0.6)
+                    st.session_state.results = results
+                    st.session_state.to_update = to_update
 
-                        for _, row in valid_entries.iterrows():
-                            job, lot = row["job_number"], row["lot_number"]
-                            matching = db_data[(db_data["job_number"] == job) & (db_data["lot_number"] == lot)]
-                            statuses = set(matching["status"]) if not matching.empty else set()
-
-                            if not statuses:
-                                results.append((job, lot, labels['none_found']))
-                            elif "kitted" in statuses:
-                                results.append((job, lot, labels['already_kitted']))
-                            elif "requested" in statuses:
-                                results.append((job, lot, labels['already_requested']))
-                            elif "pending" in statuses:
-                                results.append((job, lot, labels['submitted']))
-                                to_update.append({
-                                    "job_number": job,
-                                    "lot_number": lot,
-                                    "requested_by": st.session_state["username"]
-                                })
-                            else:
-                                results.append((job, lot, labels['invalid_status']))
-
-                        progress.progress(0.6)  # Logic done
-                        st.session_state.results = results
-                        st.session_state.to_update = to_update
-
+                    
                     except Exception as e:
                         st.error(f"{labels['error']}: {str(e)}")
                         # Add errors to results
