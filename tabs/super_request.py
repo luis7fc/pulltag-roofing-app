@@ -9,7 +9,7 @@ import tempfile
 
 def run():
     st.header('Super Request')
-    user = st.session_state.get("user", {}).get("username", "")
+    user = st.session_state.get("username", {}).get("username", "")
     
     # --- PDF Generation Function ---
     def generate_pulltag_pdf(dataframe, filename="pulltag_request_summary.pdf"):
@@ -174,7 +174,7 @@ def run():
                                 to_update.append({
                                     "job_number": job,
                                     "lot_number": lot,
-                                    "requested_by": st.session_state["user"]
+                                    "requested_by": st.session_state["username"]
                                 })
                             else:
                                 results.append((job, lot, labels['invalid_status']))
@@ -202,7 +202,7 @@ def run():
         if st.button(labels['confirm_button']):
             try:
                 with st.spinner("Submitting..."):
-                    user = st.session_state["user"]
+                    user = st.session_state["username"]
                     batch_id = f"{user}_{str(uuid.uuid4())[:5]}"
                     for entry in st.session_state.to_update:
                         supabase.table("pulltags").update({
@@ -234,7 +234,7 @@ def run():
     st.markdown(labels['reprint_title'])
 
     # 1️⃣ Dropdown of recent batches by user
-    user = st.session_state["user"]
+    user = st.session_state["username"]
     recent_data = supabase.table("pulltags") \
         .select("batch_id") \
         .eq("requested_by", user) \
