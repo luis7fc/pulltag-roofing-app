@@ -137,10 +137,18 @@ def run():
         submitted = st.form_submit_button(labels['submit'])
 
     if submitted:
-        if job_entries.empty:
+        partially_filled = job_entries.dropna(how="all")
+        if partially_filled.empty:
             st.warning(labels['no_entries'])
+                
         else:
-            valid_entries = job_entries.dropna(how="all")
+            valid_entries = partially_filled.dropna()
+            invalid_rows = partially_filled[~partially_filled.index.isin(valid_entries.index)]
+
+            if not invalid_rows.empty:
+                st.warning(f"⚠️ {len(invalid_rows)} row(s) have missing job or lot number.")
+                st.dataframe(invalid_rows)
+                
             duplicate_mask = valid_entries.duplicated(["job_number", "lot_number"])
             if duplicate_mask.any():
                 st.error(labels['duplicates_found'])
