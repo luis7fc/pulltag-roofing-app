@@ -6,11 +6,22 @@ import os
 import uuid
 from fpdf import FPDF
 import tempfile
+import json
 
 def run():
     st.header('Super Request')
     user = st.session_state.get("username")
+    supabase = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_KEY"])  # anon key OK
     
+    def get_statuses(pairs: list[dict[str, str]]) -> pd.DataFrame:
+        res = supabase.functions.invoke(
+            "pulltag-statuses",
+            body=json.dumps(pairs)
+        )
+        if res.error:
+            raise RuntimeError(res.error)
+        return pd.DataFrame(res.data)   # columns: job_number | lot_number | status
+
     # --- PDF Generation Function ---
     def generate_pulltag_pdf(dataframe, filename="pulltag_request_summary.pdf"):
         pdf = FPDF()
@@ -31,7 +42,6 @@ def run():
     # --- Supabase Init ---
     SUPABASE_URL = os.environ["SUPABASE_URL"]
     SUPABASE_KEY = os.environ["SUPABASE_KEY"]
-    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
     # --- Language Setup ---
     if 'language' not in st.session_state:
@@ -137,7 +147,7 @@ def run():
         submitted = st.form_submit_button(labels['submit'])
 
     # ─────────────────────────────────────────────
-    # SUBMIT HANDLER
+    # SUBMIT HANDLER  (Edge Function version)
     # ─────────────────────────────────────────────
     if submitted:
         raw = job_entries.copy()
@@ -153,7 +163,7 @@ def run():
         invalid_rows  = pf.loc[~pf.index.isin(valid_entries.index)]
     
         # 3) Normalize keys
-        def norm(x): return str(x).strip().replace('.0', '')
+        def norm(x): return str(x).strip().replace(".0", "")
         for c in ("job_number", "lot_number"):
             valid_entries[c] = valid_entries[c].map(norm)
     
@@ -169,43 +179,37 @@ def run():
             st.dataframe(valid_entries[dup_mask])
             st.stop()
     
-        # 6) Fetch + process inside one try/except INSIDE the spinner
+        # 6) Build payload for Edge Function
+        pairs = valid_entries[["job_number", "lot_number"]].to_dict("records")
+    
         results, to_update = [], []
         with st.spinner(f"{labels['processing']} {len(valid_entries)}..."):
             progress = st.progress(0)
             try:
-                # Fetch db rows once
-                q = supabase.table("pulltags") \
-                    .select("job_number, lot_number, status") \
-                    .in_("job_number", valid_entries["job_number"].unique().tolist()) \
-                    .execute()
-    
-                db_data = pd.DataFrame(q.data).copy()
-                for c in ("job_number", "lot_number"):
-                    db_data[c] = db_data[c].map(norm)
-    
-                progress.progress(0.3)
-    
-                # Merge rather than boolean filtering
-                merged = valid_entries.merge(
-                    db_data,
-                    on=["job_number", "lot_number"],
-                    how="left",
-                    suffixes=("", "_db")
+                # ---- call edge function ----
+                import json
+                res = supabase.functions.invoke(
+                    "pulltag-statuses",
+                    body=json.dumps(pairs)
                 )
+                if res.error:
+                    raise Exception(res.error)
+    
+                df_status = pd.DataFrame(res.data)  # job_number | lot_number | status
+                progress.progress(0.5)
     
                 # ---- OPTIONAL DEBUG ----
                 if st.checkbox("🔧 debug rows", key="sr_debug"):
                     st.write("raw:", raw)
                     st.write("valid_entries:", valid_entries.dtypes, valid_entries)
-                    st.write("db_data:", db_data.dtypes, db_data.head())
-                    st.write("merged:", merged.dtypes, merged)
+                    st.write("df_status:", df_status.dtypes, df_status)
                     st.stop()
     
-                # Build result lists
-                for _, r in merged.iterrows():
+                # 7) Build result lists
+                for _, r in df_status.iterrows():
                     job, lot, status = r["job_number"], r["lot_number"], r["status"]
-                    if pd.isna(status):
+    
+                    if status is None:
                         results.append((job, lot, labels['none_found']))
                     elif status == "kitted":
                         results.append((job, lot, labels['already_kitted']))
@@ -221,17 +225,14 @@ def run():
                     else:
                         results.append((job, lot, labels['invalid_status']))
     
-                progress.progress(0.6)
+                progress.progress(1.0)
                 st.session_state.results = results
                 st.session_state.to_update = to_update
     
             except Exception as e:
                 st.error(f"{labels['error']}: {e}")
-                # Fall back so UI still shows something
-                fail = [
-                    (r["job_number"], r["lot_number"], f"{labels['error']}: Failed to process")
-                    for _, r in valid_entries.iterrows()
-                ]
+                fail = [(j["job_number"], j["lot_number"], f"{labels['error']}: Failed to process")
+                        for j in pairs]
                 st.session_state.results = fail
                 progress.progress(1.0)
 
