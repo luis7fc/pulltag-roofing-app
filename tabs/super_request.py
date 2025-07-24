@@ -127,18 +127,19 @@ def run():
         if st.button("🚀 Submit requests", disabled=disabled_submit):
             batch_id = f"{user}-{uuid.uuid4().hex[:5].upper()}"
             with st.spinner("Validating & committing…"):
-                # Re‑query live statuses to avoid race conditions
+                # Re‑query live statuses to avoid race conditions      
                 filters = " | ".join(
-                    [f"(job_number == '{p['job_number']}' and lot_number == '{p['lot_number']}')" for p in st.session_state["req_pairs"]]
+                    [f"(job_number == '{p['job_number']}' and lot_number == '{p['lot_number']}')"
+                     for p in st.session_state["req_pairs"]]
                 )
-                live_df = (
-                    client.table("pulltags")
-                    .select("job_number, lot_number, status")
-                    .execute()
-                    .df()
-                    .query(filters)
-                ) if filters else pd.DataFrame()
-
+                if filters:
+                    live_res = client.table("pulltags") \
+                                     .select("job_number, lot_number, status") \
+                                     .execute()
+                    live_df = pd.DataFrame(live_res.data).query(filters)
+                else:
+                    live_df = pd.DataFrame()
+                
                 warnings = []
                 to_update = []
                 for p in st.session_state["req_pairs"]:
