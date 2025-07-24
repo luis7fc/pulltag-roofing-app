@@ -39,16 +39,12 @@ def get_lookup_df(_client):
 
 def generate_pulltag_pdf(df: pd.DataFrame, title: str | None = None) -> bytes:
     """Return PDF bytes summarising requested pulltags, ordered by lot."""
-    # ── 1) sort the dataframe ──────────────────────────────────────────────
     df_sorted = (
-        df.assign(  # cast to numeric if the column is digits only
-            lot_number_num=pd.to_numeric(df["lot_number"], errors="ignore")
-        )
-        .sort_values(["lot_number_num", "item_code"], kind="stable")
-        .drop(columns="lot_number_num")
+        df.assign(lot_number_num=pd.to_numeric(df["lot_number"], errors="ignore"))
+          .sort_values(["lot_number_num", "item_code"], kind="stable")
+          .drop(columns="lot_number_num")
     )
 
-    # ── 2) build the PDF (unchanged apart from iterrows source) ─────────────
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
@@ -57,17 +53,19 @@ def generate_pulltag_pdf(df: pd.DataFrame, title: str | None = None) -> bytes:
     pdf.cell(0, 10, txt=title_text, ln=True, align="C")
     pdf.ln(4)
 
-    headers = ["Job", "Lot", "Item", "Qty"]
-    col_widths = [30, 30, 40, 20]
+    # 👇  add Cost column
+    headers     = ["Job", "Lot", "Cost", "Item", "Qty"]
+    col_widths  = [28,    28,   28,    40,    20]   # keep page width ≈ 144 mm
     for header, w in zip(headers, col_widths):
         pdf.cell(w, 8, header, border=1, align="C")
     pdf.ln()
 
-    for _, row in df_sorted.iterrows():               # 👈 iterate on sorted df
-        pdf.cell(col_widths[0], 8, row.get("job_number", ""), border=1)
-        pdf.cell(col_widths[1], 8, row.get("lot_number", ""), border=1)
-        pdf.cell(col_widths[2], 8, row.get("item_code", ""), border=1)
-        pdf.cell(col_widths[3], 8, str(row.get("quantity", "")), border=1, ln=1)
+    for _, row in df_sorted.iterrows():
+        pdf.cell(col_widths[0], 8, row.get("job_number",  ""), border=1)
+        pdf.cell(col_widths[1], 8, row.get("lot_number",  ""), border=1)
+        pdf.cell(col_widths[2], 8, row.get("cost_code",   ""), border=1)   # 👈
+        pdf.cell(col_widths[3], 8, row.get("item_code",  ""), border=1)
+        pdf.cell(col_widths[4], 8, str(row.get("quantity", "")), border=1, ln=1)
 
     return pdf.output(dest="S").encode("latin1")
 
@@ -239,13 +237,15 @@ def run():
         
                     # fetch rows for PDF (only if at least one succeeded)
                     if len(errors) < len(to_update):
+                        #here
                         pdf_res = (
                             client.table("pulltags")
-                                  .select("job_number, lot_number, item_code, quantity")
+                                  .select("job_number, lot_number, cost_code, item_code, quantity")  # 👈 added
                                   .eq("batch_id", batch_id)
                                   .order("job_number")
                                   .execute()
                         )
+                        
                         pdf_df = pd.DataFrame(pdf_res.data)
                         st.success(f"Queued {len(to_update) - len(errors)} lot(s) under batch {batch_id}")
         
@@ -331,7 +331,7 @@ def run():
             try:
                 res = (
                     client.table("pulltags")
-                          .select("job_number, lot_number, item_code, quantity")
+                          .select("job_number, lot_number, cost_code, item_code, quantity")  # 👈 added
                           .eq("batch_id", batch_id)
                           .order("lot_number")
                           .execute()
