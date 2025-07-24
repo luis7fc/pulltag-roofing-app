@@ -90,22 +90,40 @@ def run():
         user = st.session_state.get("username") or st.session_state.get("user")
         if not user:
             st.warning("User not found in session_state. Ensure login sets 'username'.")
-
+    
+        # Pick one job number first (unchanged) …
         job_input = st.text_input("Job number").strip().upper()
+        
         if job_input:
             lots_available = (
                 lookup_df.query("job_number == @job_input and status == 'pending'")
                 .lot_number.unique()
                 .tolist()
             )
+        
             if not lots_available:
                 st.info("No pending lots for this job.")
             else:
-                lot_selected = st.selectbox("Select lot", lots_available, key="lot_select")
-                if st.button("➕ Add") and lot_selected:
-                    pair = {"job_number": job_input, "lot_number": str(lot_selected)}
-                    if pair not in st.session_state["req_pairs"]:
-                        st.session_state["req_pairs"].append(pair)
+                # 🔄 1) multiselect instead of selectbox
+                lots_selected = st.multiselect(
+                    "Select lot(s) to add",
+                    options=lots_available,
+                    key="lots_select",
+                )
+        
+                # 🔄 2) one button to add all chosen lots
+                if st.button("➕ Add selected", disabled=len(lots_selected) == 0):
+                    added = 0
+                    for lot in lots_selected:
+                        pair = {"job_number": job_input, "lot_number": str(lot)}
+                        if pair not in st.session_state["req_pairs"]:
+                            st.session_state["req_pairs"].append(pair)
+                            added += 1
+        
+                    if added:
+                        st.success(f"Added {added} lot(s) from job {job_input}")
+                        # Optional: clear selection so user sees an empty box again
+                        st.session_state["lots_select"] = []
 
         # ─────────────────────────────────────────────
         # Display current list & multi‑delete UI
