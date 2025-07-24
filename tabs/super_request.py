@@ -91,7 +91,7 @@ def run():
         if not user:
             st.warning("User not found in session_state. Ensure login sets 'username'.")
     
-        # Pick one job number first (unchanged) …
+        # ---------- lot selection ----------
         job_input = st.text_input("Job number").strip().upper()
         
         if job_input:
@@ -104,14 +104,15 @@ def run():
             if not lots_available:
                 st.info("No pending lots for this job.")
             else:
-                # 🔄 1) multiselect instead of selectbox
+                # 👇 clear the selection before widget is instantiated
+                st.session_state.pop("lots_select", None)
+        
                 lots_selected = st.multiselect(
                     "Select lot(s) to add",
                     options=lots_available,
                     key="lots_select",
                 )
         
-                # 🔄 2) one button to add all chosen lots
                 if st.button("➕ Add selected", disabled=len(lots_selected) == 0):
                     added = 0
                     for lot in lots_selected:
@@ -122,8 +123,7 @@ def run():
         
                     if added:
                         st.success(f"Added {added} lot(s) from job {job_input}")
-                        # Optional: clear selection so user sees an empty box again
-                        st.session_state["lots_select"] = []
+                        st.rerun()  # the pop() above will reset the multiselect on rerun
 
         # ─────────────────────────────────────────────
         # Display current list & multi‑delete UI
