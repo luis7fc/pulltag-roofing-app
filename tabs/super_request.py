@@ -112,7 +112,7 @@ def run():
         # ─────────────────────────────────────────────
         pairs_df = pd.DataFrame(st.session_state["req_pairs"])
         
-        if pairs_df.empty():
+        if pairs_df.empty:
             st.caption("No lots added yet.")
         else:
             st.table(pairs_df)   # read‑only view of current selections
