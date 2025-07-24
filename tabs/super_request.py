@@ -153,64 +153,36 @@ def run():
     # ─────────────────────────────────────────────
     if submitted:
         raw = job_entries.copy()
-    
-        # 1) Remove fully blank rows
+        st.write("Raw job_entries:", raw)  # Debug
         pf = raw.dropna(how="all")
         if pf.empty:
             st.warning(labels['no_entries'])
             st.stop()
-    
-        # 2) Split valid / invalid
-        valid_entries = pf.dropna().copy()
-        invalid_rows  = pf.loc[~pf.index.isin(valid_entries.index)]
-    
-        # 3) Normalize keys
+        valid_entries = pf.dropna(subset=["job_number", "lot_number"])
+        if valid_entries.empty:
+            st.warning("⚠️ All rows are missing either job_number or lot_number!")
+            st.dataframe(pf)
+            st.stop()
+        # Normalize keys
         def norm(x): return str(x).strip().replace(".0", "")
         for c in ("job_number", "lot_number"):
             valid_entries[c] = valid_entries[c].map(norm)
-    
-        # 4) Warn on invalids
-        if not invalid_rows.empty:
-            st.warning(f"⚠️ {len(invalid_rows)} row(s) have missing job or lot number.")
-            st.dataframe(invalid_rows)
-    
-        # 5) Dedupe after normalization
+        # Check for duplicates
         dup_mask = valid_entries.duplicated(["job_number", "lot_number"])
         if dup_mask.any():
             st.error(labels['duplicates_found'])
             st.dataframe(valid_entries[dup_mask])
             st.stop()
-    
-        # 6) Build payload for Edge Function
+        # Build payload
         pairs = valid_entries[["job_number", "lot_number"]].to_dict("records")
-    
         results, to_update = [], []
         with st.spinner(f"{labels['processing']} {len(valid_entries)}..."):
             progress = st.progress(0)
             try:
-                # ---- call edge function ----
-                import json
-                res = supabase.functions.invoke(
-                    "pulltag-statuses",
-                    body=json.dumps(pairs)
-                )
-                if res.error:
-                    raise Exception(res.error)
-    
-                df_status = pd.DataFrame(res.data)  # job_number | lot_number | status
+                df_status = get_statuses(pairs)
                 progress.progress(0.5)
-    
-                # ---- OPTIONAL DEBUG ----
-                if st.checkbox("🔧 debug rows", key="sr_debug"):
-                    st.write("raw:", raw)
-                    st.write("valid_entries:", valid_entries.dtypes, valid_entries)
-                    st.write("df_status:", df_status.dtypes, df_status)
-                    st.stop()
-    
-                # 7) Build result lists
                 for _, r in df_status.iterrows():
                     job, lot, status = r["job_number"], r["lot_number"], r["status"]
-    
                     if status is None:
                         results.append((job, lot, labels['none_found']))
                     elif status == "kitted":
@@ -226,11 +198,9 @@ def run():
                         })
                     else:
                         results.append((job, lot, labels['invalid_status']))
-    
                 progress.progress(1.0)
                 st.session_state.results = results
                 st.session_state.to_update = to_update
-    
             except Exception as e:
                 st.error(f"{labels['error']}: {e}")
                 fail = [(j["job_number"], j["lot_number"], f"{labels['error']}: Failed to process")
