@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import os
 import uuid
+from postgrest.exceptions import APIError   # add near your imports
 from datetime import datetime, timezone
 from fpdf import FPDF
 from supabase import create_client, Client
@@ -11,9 +12,8 @@ try:
 except ImportError:
     # Fallback for supabase‑py 1.x
     from supabase.lib.postgrest import APIError# ─────────────────────────────────────────────
-# Helpers
-# ─────────────────────────────────────────────
 
+# Helpers
 def get_supabase_client() -> Client:
     """Create a Supabase client using **only** environment variables (Render safe)."""
     url = os.environ.get("SUPABASE_URL")
@@ -36,8 +36,6 @@ def get_lookup_df(_client):
     except APIError as e:
         st.error(f"Supabase error {e.code}: {e.message}")
         st.stop()
-
-
 
 def generate_pulltag_pdf(df: pd.DataFrame, title: str | None = None) -> bytes:
     """Return PDF bytes summarising requested pulltags."""
@@ -62,7 +60,6 @@ def generate_pulltag_pdf(df: pd.DataFrame, title: str | None = None) -> bytes:
         pdf.cell(col_widths[3], 8, str(row.get("quantity", "")), border=1, ln=1)
 
     return pdf.output(dest="S").encode("latin1")
-
 
 # ─────────────────────────────────────────────
 # Streamlit Entry Point
@@ -110,17 +107,40 @@ def run():
                     if pair not in st.session_state["req_pairs"]:
                         st.session_state["req_pairs"].append(pair)
 
-        # Display current list
+        # ─────────────────────────────────────────────
+        # Display current list & multi‑delete UI
+        # ─────────────────────────────────────────────
         pairs_df = pd.DataFrame(st.session_state["req_pairs"])
-        if not pairs_df.empty:
-            st.table(pairs_df)
-            # Remove buttons
-            for i, row in pairs_df.iterrows():
-                key = f"del_{row['job_number']}_{row['lot_number']}_{i}"
-                if st.button("🗑", key=key):
-                    st.session_state["req_pairs"].pop(i)
-                    st.rerun()
-
+        
+        if pairs_df.empty():
+            st.caption("No lots added yet.")
+        else:
+            st.table(pairs_df)   # read‑only view of current selections
+        
+            # Build human‑readable labels → "JOB | LOT"
+            labels = [
+                f"{row.job_number} | {row.lot_number}"
+                for row in pairs_df.itertuples()
+            ]
+        
+            # Slim one‑line dropdown with pill chips after selection
+            remove_choices = st.multiselect(
+                "Select lot(s) to remove",
+                options=labels,
+                key="rm_select",
+            )
+        
+            if st.button("🗑 Remove selected", disabled=not remove_choices):
+                # Remove selected rows (reverse order keeps indices valid)
+                for lbl in sorted(remove_choices, key=labels.index, reverse=True):
+                    idx = labels.index(lbl)
+                    st.session_state["req_pairs"].pop(idx)
+                st.success(f"Removed {len(remove_choices)} lot(s)")
+                st.rerun()  # refresh UI so the table re‑renders without removed rows
+        
+        # ────────── Submit section ──────────
+        from postgrest.exceptions import APIError   # add near your imports
+        
         # ────────── Submit section ──────────
         disabled_submit = len(st.session_state["req_pairs"]) == 0 or not user
         if st.button("🚀 Submit requests", disabled=disabled_submit):
@@ -156,6 +176,7 @@ def run():
                     st.warning("Some pairs were skipped:")
                     st.table(pd.DataFrame(warnings))
         
+                # ───── perform updates ─────
                 if to_update:
                     utc_now = datetime.now(timezone.utc).isoformat()
                     payload = {
@@ -165,38 +186,45 @@ def run():
                         "batch_id": batch_id,
                     }
         
-                    # --- perform updates one pair at a time (simple & safe) ---
+                    errors = []
                     for p in to_update:
-                        resp = (
+                        try:
+                            client.table("pulltags") \
+                                  .update(payload) \
+                                  .eq("job_number", p["job_number"]) \
+                                  .eq("lot_number",  p["lot_number"]) \
+                                  .eq("status",      "pending") \
+                                  .execute()
+                        except APIError as e:
+                            errors.append({
+                                "job_number": p["job_number"],
+                                "lot_number": p["lot_number"],
+                                "reason": f"{e.code}: {e.message}"
+                            })
+        
+                    if errors:
+                        st.error("Some updates failed:")
+                        st.table(pd.DataFrame(errors))
+        
+                    # fetch rows for PDF (only if at least one succeeded)
+                    if len(errors) < len(to_update):
+                        pdf_res = (
                             client.table("pulltags")
-                                  .update(payload)
-                                  .eq("job_number", p["job_number"])
-                                  .eq("lot_number", p["lot_number"])
-                                  .eq("status", "pending")      # extra race‑check
+                                  .select("job_number, lot_number, item_code, quantity")
+                                  .eq("batch_id", batch_id)
+                                  .order("job_number")
                                   .execute()
                         )
-                        if resp.error:
-                            st.error(f"Update failed for {p['job_number']}‑{p['lot_number']}: "
-                                     f"{resp.error.message}")
+                        pdf_df = pd.DataFrame(pdf_res.data)
+                        st.success(f"Queued {len(to_update) - len(errors)} lot(s) under batch {batch_id}")
         
-                    # --- fetch updated rows for the PDF ---
-                    pdf_res = (
-                        client.table("pulltags")
-                              .select("job_number, lot_number, item_code, quantity")
-                              .eq("batch_id", batch_id)
-                              .order("job_number")
-                              .execute()
-                    )
-                    pdf_df = pd.DataFrame(pdf_res.data)
-                    st.success(f"Queued {len(to_update)} lot(s) under batch {batch_id}")
-        
-                    pdf_bytes = generate_pulltag_pdf(pdf_df, title=f"Batch {batch_id}")
-                    st.download_button(
-                        "📄 Download summary PDF",
-                        data=pdf_bytes,
-                        file_name=f"{batch_id}.pdf",
-                        mime="application/pdf",
-                    )
+                        pdf_bytes = generate_pulltag_pdf(pdf_df, title=f"Batch {batch_id}")
+                        st.download_button(
+                            "📄 Download summary PDF",
+                            data=pdf_bytes,
+                            file_name=f"{batch_id}.pdf",
+                            mime="application/pdf",
+                        )
         
                     st.session_state["req_pairs"] = []  # reset selection
 
