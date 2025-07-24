@@ -14,14 +14,16 @@ def run():
     supabase = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_KEY"])  # anon key OK
     
     def get_statuses(pairs: list[dict[str, str]]) -> pd.DataFrame:
-        res = supabase.functions.invoke(
-            "pulltag-statuses",
-            body=json.dumps(pairs)
-        )
-        if res.error:
-            raise RuntimeError(res.error)
-        return pd.DataFrame(res.data)   # columns: job_number | lot_number | status
-
+        supabase = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_KEY"])
+        try:
+            # Invoke the edge function with the correct payload
+            res = supabase.functions().invoke("pulltag-statuses", json.dumps(pairs))
+            if res.get("error"):
+                raise RuntimeError(res["error"])
+            return pd.DataFrame(res["data"])  # columns: job_number | lot_number | status
+        except Exception as e:
+            raise RuntimeError(f"Failed to invoke edge function: {str(e)}")
+            
     # --- PDF Generation Function ---
     def generate_pulltag_pdf(dataframe, filename="pulltag_request_summary.pdf"):
         pdf = FPDF()
