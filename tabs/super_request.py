@@ -38,7 +38,17 @@ def get_lookup_df(_client):
         st.stop()
 
 def generate_pulltag_pdf(df: pd.DataFrame, title: str | None = None) -> bytes:
-    """Return PDF bytes summarising requested pulltags."""
+    """Return PDF bytes summarising requested pulltags, ordered by lot."""
+    # ── 1) sort the dataframe ──────────────────────────────────────────────
+    df_sorted = (
+        df.assign(  # cast to numeric if the column is digits only
+            lot_number_num=pd.to_numeric(df["lot_number"], errors="ignore")
+        )
+        .sort_values(["lot_number_num", "item_code"], kind="stable")
+        .drop(columns="lot_number_num")
+    )
+
+    # ── 2) build the PDF (unchanged apart from iterrows source) ─────────────
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
@@ -53,7 +63,7 @@ def generate_pulltag_pdf(df: pd.DataFrame, title: str | None = None) -> bytes:
         pdf.cell(w, 8, header, border=1, align="C")
     pdf.ln()
 
-    for _, row in df.iterrows():
+    for _, row in df_sorted.iterrows():               # 👈 iterate on sorted df
         pdf.cell(col_widths[0], 8, row.get("job_number", ""), border=1)
         pdf.cell(col_widths[1], 8, row.get("lot_number", ""), border=1)
         pdf.cell(col_widths[2], 8, row.get("item_code", ""), border=1)
@@ -251,26 +261,85 @@ def run():
     # ─────────────────────────────────────────────
     with tab_reprint:
         st.subheader("Re‑print existing batch")
-        batch = st.text_input("Enter batch_id to re‑print").strip()
-        if st.button("🔍 Fetch batch") and batch:
-            res = (
-                client.table("pulltags")
-                .select("job_number, lot_number, item_code, quantity")
-                .eq("batch_id", batch)
-                .order("job_number")
-                .execute()
-            )
-            if res.error:
-                st.error(res.error.message)
-            elif not res.data:
-                st.info("No rows found for that batch_id.")
+    
+        # --- input fields ---
+        batch_input = st.text_input("Enter batch_id (optional)").strip()
+        st.markdown("— or —")
+        job_lookup = st.text_input("Job number").strip().upper()
+        lot_lookup = st.text_input("Lot number").strip()
+    
+        if st.button("🔍 Fetch"):
+    
+            # --------------------------------------------------
+            # CASE 1: user gave an explicit batch_id
+            # --------------------------------------------------
+            if batch_input:
+                batch_ids = [batch_input]
+    
+            # --------------------------------------------------
+            # CASE 2: user gave job + lot only
+            # --------------------------------------------------
+            elif job_lookup and lot_lookup:
+                try:
+                    resp = (
+                        client.table("pulltags")
+                              .select("batch_id")
+                              .eq("job_number", job_lookup)
+                              .eq("lot_number", lot_lookup)
+                              .neq("batch_id", None)          # ignore nulls
+                              .execute()
+                    )
+                    batch_ids = sorted({row["batch_id"] for row in resp.data})
+                except APIError as e:
+                    st.error(f"Supabase error {e.code}: {e.message}")
+                    batch_ids = []
+    
+                if len(batch_ids) == 0:
+                    st.info("No batch_id found for that job / lot.")
+                    st.stop()
+    
+                if len(batch_ids) > 1:
+                    chosen = st.selectbox(
+                        "Multiple batches found – select one",
+                        batch_ids,
+                        key="batch_pick",
+                    )
+                    if not chosen:
+                        st.stop()
+                    batch_ids = [chosen]
+    
             else:
-                df = pd.DataFrame(res.data)
+                st.warning("Please enter either a batch_id *or* a job & lot.")
+                st.stop()
+    
+            # --------------------------------------------------
+            # Fetch rows for the chosen batch_id
+            # --------------------------------------------------
+            batch_id = batch_ids[0]
+    
+            try:
+                res = (
+                    client.table("pulltags")
+                          .select("job_number, lot_number, item_code, quantity")
+                          .eq("batch_id", batch_id)
+                          .order("lot_number")
+                          .execute()
+                )
+                data = res.data
+            except APIError as e:
+                st.error(f"Supabase error {e.code}: {e.message}")
+                st.stop()
+    
+            if not data:
+                st.info(f"No rows found for batch {batch_id}.")
+            else:
+                df = pd.DataFrame(data)
                 st.table(df)
-                pdf_bytes = generate_pulltag_pdf(df, title=f"Batch {batch}")
+    
+                pdf_bytes = generate_pulltag_pdf(df, title=f"Batch {batch_id}")
                 st.download_button(
                     "📄 Download batch PDF",
                     data=pdf_bytes,
-                    file_name=f"{batch}.pdf",
+                    file_name=f"{batch_id}.pdf",
                     mime="application/pdf",
                 )
