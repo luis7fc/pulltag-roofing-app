@@ -116,9 +116,11 @@ def run():
             st.table(pairs_df)
             # Remove buttons
             for i, row in pairs_df.iterrows():
-                if st.button("🗑", key=f"del_{i}"):
+                key = f"del_{row['job_number']}_{row['lot_number']}_{i}"
+                if st.button("🗑", key=key):
                     st.session_state["req_pairs"].pop(i)
                     st.rerun()
+
 
         # Submit section
         disabled_submit = len(st.session_state["req_pairs"]) == 0 or not user
