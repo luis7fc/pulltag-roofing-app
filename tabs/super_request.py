@@ -11,14 +11,13 @@ from supabase import create_client, Client
 # ─────────────────────────────────────────────
 
 def get_supabase_client() -> Client:
-    """Create Supabase client from env vars or Streamlit secrets."""
-    url = st.secrets.get("SUPABASE_URL", os.environ.get("SUPABASE_URL"))
-    key = st.secrets.get("SUPABASE_KEY", os.environ.get("SUPABASE_KEY"))
+    """Create a Supabase client using **only** environment variables (Render safe)."""
+    url = os.environ.get("SUPABASE_URL")
+    key = os.environ.get("SUPABASE_KEY")
     if not url or not key:
-        st.error("Supabase credentials not found. Set SUPABASE_URL & SUPABASE_KEY.")
+        st.error("Supabase credentials not set in environment variables.")
         st.stop()
     return create_client(url, key)
-
 
 @st.cache_data(ttl=60 * 5, show_spinner=False)
 def get_lookup_df(client: Client) -> pd.DataFrame:
