@@ -102,7 +102,10 @@ def run():
             st.warning("User not found in session_state. Ensure login sets 'username'.")
     
         # ---------- lot selection ----------
-        job_input = st.text_input("Job number").strip().upper()
+        job_input = st.text_input(
+            "Job number",
+            key="newreq_job_number",      # 👈  unique key
+        ).strip().upper()
         
         if job_input:
             lots_available = (
@@ -265,8 +268,16 @@ def run():
         # --- input fields ---
         batch_input = st.text_input("Enter batch_id (optional)").strip()
         st.markdown("— or —")
-        job_lookup = st.text_input("Job number").strip().upper()
-        lot_lookup = st.text_input("Lot number").strip()
+        
+        job_lookup = st.text_input(
+            "Job number",
+            key="reprint_job_number",     # 👈  different key
+        ).strip().upper()
+        
+        lot_lookup = st.text_input(
+            "Lot number",
+            key="reprint_lot_number",     # 👈  give the lot box a key too
+        ).strip()
     
         if st.button("🔍 Fetch"):
     
