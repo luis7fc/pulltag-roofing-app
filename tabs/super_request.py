@@ -5,8 +5,12 @@ import uuid
 from datetime import datetime, timezone
 from fpdf import FPDF
 from supabase import create_client, Client
-from supabase.lib.postgrest import APIError  
-# ─────────────────────────────────────────────
+try:
+    # supabase‑py ≥ 2.0
+    from postgrest.exceptions import APIError
+except ImportError:
+    # Fallback for supabase‑py 1.x
+    from supabase.lib.postgrest import APIError# ─────────────────────────────────────────────
 # Helpers
 # ─────────────────────────────────────────────
 
