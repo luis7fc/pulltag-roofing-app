@@ -12,18 +12,16 @@ def run():
     st.header('Super Request')
     user = st.session_state.get("username")
     supabase = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_KEY"])  # anon key OK
-    
+
     def get_statuses(pairs: list[dict[str, str]]) -> pd.DataFrame:
-        supabase = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_KEY"])
-        try:
-            # Invoke the edge function with the correct payload
-            res = supabase.functions().invoke("pulltag-statuses", json.dumps(pairs))
-            if res.get("error"):
-                raise RuntimeError(res["error"])
-            return pd.DataFrame(res["data"])  # columns: job_number | lot_number | status
-        except Exception as e:
-            raise RuntimeError(f"Failed to invoke edge function: {str(e)}")
-            
+        res = supabase.functions.invoke(
+            "pulltag-statuses",
+            body=json.dumps(pairs)
+        )
+        if res.error:
+            raise RuntimeError(res.error)
+        return pd.DataFrame(res.data)   # columns: job_number | lot_number | status
+
     # --- PDF Generation Function ---
     def generate_pulltag_pdf(dataframe, filename="pulltag_request_summary.pdf"):
         pdf = FPDF()
@@ -48,14 +46,18 @@ def run():
     # --- Language Setup ---
     if 'language' not in st.session_state:
         st.session_state.language = 'en'
-
     lang = st.session_state.language
+
+    # --- Initialize job_entries_df in session_state ---
+    # This must be done BEFORE the data_editor is rendered, on every rerun.
+    if 'job_entries_df' not in st.session_state:
+        st.session_state.job_entries_df = pd.DataFrame(columns=["job_number", "lot_number"])
 
     # --- Language Toggle ---
     toggle = "Cambiar a Español Mexicano" if lang == 'en' else "Switch to English"
     if st.button(toggle):
         st.session_state.language = 'es' if lang == 'en' else 'en'
-        st.rerun()
+        st.rerun() # <--- Re-introduced st.rerun() for immediate language update
 
     # --- Labels ---
     labels = {
@@ -137,14 +139,17 @@ def run():
     }
 
     with st.form("super_request_form", clear_on_submit=False):
+        # Use st.session_state.job_entries_df as the initial data
         job_entries = st.data_editor(
-            pd.DataFrame(columns=["job_number", "lot_number"]),
+            st.session_state.job_entries_df, # Pass the DataFrame from session_state
             use_container_width=True,
             num_rows="dynamic",
             column_config=column_config,
             key="job_lot_input",
             hide_index=True,
         )
+        # Update session state with the current state of the data editor
+        st.session_state.job_entries_df = job_entries
 
         submitted = st.form_submit_button(labels['submit'])
 
@@ -152,37 +157,65 @@ def run():
     # SUBMIT HANDLER  (Edge Function version)
     # ─────────────────────────────────────────────
     if submitted:
-        raw = job_entries.copy()
-        st.write("Raw job_entries:", raw)  # Debug
+        raw = job_entries.copy() # Use the data directly from job_entries
+
+        # 1) Remove fully blank rows
         pf = raw.dropna(how="all")
         if pf.empty:
             st.warning(labels['no_entries'])
             st.stop()
-        valid_entries = pf.dropna(subset=["job_number", "lot_number"])
-        if valid_entries.empty:
-            st.warning("⚠️ All rows are missing either job_number or lot_number!")
-            st.dataframe(pf)
-            st.stop()
-        # Normalize keys
+
+        # 2) Split valid / invalid
+        valid_entries = pf.dropna().copy()
+        invalid_rows  = pf.loc[~pf.index.isin(valid_entries.index)]
+
+        # 3) Normalize keys
         def norm(x): return str(x).strip().replace(".0", "")
         for c in ("job_number", "lot_number"):
             valid_entries[c] = valid_entries[c].map(norm)
-        # Check for duplicates
+
+        # 4) Warn on invalids
+        if not invalid_rows.empty:
+            st.warning(f"⚠️ {len(invalid_rows)} row(s) have missing job or lot number.")
+            st.dataframe(invalid_rows)
+
+        # 5) Dedupe after normalization
         dup_mask = valid_entries.duplicated(["job_number", "lot_number"])
         if dup_mask.any():
             st.error(labels['duplicates_found'])
             st.dataframe(valid_entries[dup_mask])
             st.stop()
-        # Build payload
+
+        # 6) Build payload for Edge Function
         pairs = valid_entries[["job_number", "lot_number"]].to_dict("records")
+
         results, to_update = [], []
         with st.spinner(f"{labels['processing']} {len(valid_entries)}..."):
             progress = st.progress(0)
             try:
-                df_status = get_statuses(pairs)
+                # ---- call edge function ----
+                import json
+                res = supabase.functions.invoke(
+                    "pulltag-statuses",
+                    body=json.dumps(pairs)
+                )
+                if res.error:
+                    raise Exception(res.error)
+
+                df_status = pd.DataFrame(res.data)  # job_number | lot_number | status
                 progress.progress(0.5)
+
+                # ---- OPTIONAL DEBUG ----
+                if st.checkbox("🔧 debug rows", key="sr_debug"):
+                    st.write("raw:", raw)
+                    st.write("valid_entries:", valid_entries.dtypes, valid_entries)
+                    st.write("df_status:", df_status.dtypes, df_status)
+                    st.stop()
+
+                # 7) Build result lists
                 for _, r in df_status.iterrows():
                     job, lot, status = r["job_number"], r["lot_number"], r["status"]
+
                     if status is None:
                         results.append((job, lot, labels['none_found']))
                     elif status == "kitted":
@@ -198,9 +231,11 @@ def run():
                         })
                     else:
                         results.append((job, lot, labels['invalid_status']))
+
                 progress.progress(1.0)
                 st.session_state.results = results
                 st.session_state.to_update = to_update
+
             except Exception as e:
                 st.error(f"{labels['error']}: {e}")
                 fail = [(j["job_number"], j["lot_number"], f"{labels['error']}: Failed to process")
