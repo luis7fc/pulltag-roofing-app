@@ -121,13 +121,12 @@ def run():
                     st.session_state["req_pairs"].pop(i)
                     st.rerun()
 
-
-        # Submit section
+        # ────────── Submit section ──────────
         disabled_submit = len(st.session_state["req_pairs"]) == 0 or not user
         if st.button("🚀 Submit requests", disabled=disabled_submit):
             batch_id = f"{user}-{uuid.uuid4().hex[:5].upper()}"
             with st.spinner("Validating & committing…"):
-                # Re‑query live statuses to avoid race conditions      
+                # Re‑query live statuses to avoid race conditions
                 filters = " | ".join(
                     [f"(job_number == '{p['job_number']}' and lot_number == '{p['lot_number']}')"
                      for p in st.session_state["req_pairs"]]
@@ -139,44 +138,67 @@ def run():
                     live_df = pd.DataFrame(live_res.data).query(filters)
                 else:
                     live_df = pd.DataFrame()
-                
-                warnings = []
-                to_update = []
+        
+                warnings, to_update = [], []
                 for p in st.session_state["req_pairs"]:
-                    row = live_df[(live_df.job_number == p["job_number"]) & (live_df.lot_number == p["lot_number"])]
+                    row = live_df[
+                        (live_df.job_number == p["job_number"])
+                        & (live_df.lot_number == p["lot_number"])
+                    ]
                     if row.empty:
-                        warnings.append((p, "not found"))
+                        warnings.append({**p, "reason": "not found"})
                     elif row.iloc[0].status != "pending":
-                        warnings.append((p, f"already {row.iloc[0].status}"))
+                        warnings.append({**p, "reason": f"already {row.iloc[0].status}"})
                     else:
                         to_update.append(p)
-
+        
                 if warnings:
                     st.warning("Some pairs were skipped:")
-                    st.table(pd.DataFrame([{**w[0], "reason": w[1]} for w in warnings]))
-
+                    st.table(pd.DataFrame(warnings))
+        
                 if to_update:
                     utc_now = datetime.now(timezone.utc).isoformat()
-                    rows = [{
-                        **p,
+                    payload = {
                         "status": "requested",
                         "requested_by": user,
                         "requested_on": utc_now,
                         "batch_id": batch_id,
-                    } for p in to_update]
-                    res = client.table("pulltags").upsert(rows).execute()
-                    if res.error:
-                        st.error(res.error.message)
-                    else:
-                        st.success(f"Queued {len(rows)} lot(s) under batch {batch_id}")
-                        pdf_bytes = generate_pulltag_pdf(pd.DataFrame(rows), title=f"Batch {batch_id}")
-                        st.download_button(
-                            "📄 Download summary PDF",
-                            data=pdf_bytes,
-                            file_name=f"{batch_id}.pdf",
-                            mime="application/pdf",
+                    }
+        
+                    # --- perform updates one pair at a time (simple & safe) ---
+                    for p in to_update:
+                        resp = (
+                            client.table("pulltags")
+                                  .update(payload)
+                                  .eq("job_number", p["job_number"])
+                                  .eq("lot_number", p["lot_number"])
+                                  .eq("status", "pending")      # extra race‑check
+                                  .execute()
                         )
-                        st.session_state["req_pairs"] = []  # reset
+                        if resp.error:
+                            st.error(f"Update failed for {p['job_number']}‑{p['lot_number']}: "
+                                     f"{resp.error.message}")
+        
+                    # --- fetch updated rows for the PDF ---
+                    pdf_res = (
+                        client.table("pulltags")
+                              .select("job_number, lot_number, item_code, quantity")
+                              .eq("batch_id", batch_id)
+                              .order("job_number")
+                              .execute()
+                    )
+                    pdf_df = pd.DataFrame(pdf_res.data)
+                    st.success(f"Queued {len(to_update)} lot(s) under batch {batch_id}")
+        
+                    pdf_bytes = generate_pulltag_pdf(pdf_df, title=f"Batch {batch_id}")
+                    st.download_button(
+                        "📄 Download summary PDF",
+                        data=pdf_bytes,
+                        file_name=f"{batch_id}.pdf",
+                        mime="application/pdf",
+                    )
+        
+                    st.session_state["req_pairs"] = []  # reset selection
 
     # ─────────────────────────────────────────────
     # RE‑PRINT BATCH TAB
