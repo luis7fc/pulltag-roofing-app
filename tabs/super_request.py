@@ -20,10 +20,10 @@ def get_supabase_client() -> Client:
     return create_client(url, key)
 
 @st.cache_data(ttl=60 * 5, show_spinner=False)
-def get_lookup_df(client: Client) -> pd.DataFrame:
+def get_lookup_df(_client: Client) -> pd.DataFrame:
     """Lightweight cached pulltags view (job, lot, status)."""
     res = (
-        client.table("pulltags")
+        _client.table("pulltags")
         .select("job_number, lot_number, status")
         .execute()
     )
