@@ -104,13 +104,10 @@ def run():
             if not lots_available:
                 st.info("No pending lots for this job.")
             else:
-                # 👇 clear the selection before widget is instantiated
-                st.session_state.pop("lots_select", None)
-        
                 lots_selected = st.multiselect(
                     "Select lot(s) to add",
                     options=lots_available,
-                    key="lots_select",
+                    key="lots_select",         # persistent key
                 )
         
                 if st.button("➕ Add selected", disabled=len(lots_selected) == 0):
@@ -123,8 +120,11 @@ def run():
         
                     if added:
                         st.success(f"Added {added} lot(s) from job {job_input}")
-                        st.rerun()  # the pop() above will reset the multiselect on rerun
-
+        
+                    # ✅ clear the selection *after* widget is used
+                    st.session_state["lots_select"].clear()
+                    st.rerun()   # refresh UI so the multiselect shows empty
+        
         # ─────────────────────────────────────────────
         # Display current list & multi‑delete UI
         # ─────────────────────────────────────────────
