@@ -205,6 +205,3 @@ def run():
                     file_name=f"{batch}.pdf",
                     mime="application/pdf",
                 )
-
-# Allow running standalone for local dev\if __name__ == "__main__":
-    run()
