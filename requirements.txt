@@ -4,8 +4,7 @@ requests
 psutil
 pandas
 bcrypt
-supabase
-supabase-py>=2.0,<3.0 
+supabase>=2.0,<3.0
 python-dotenv
 streamlit-authenticator
 fpdf
