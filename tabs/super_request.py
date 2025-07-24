@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime, timezone
 from fpdf import FPDF
 from supabase import create_client, Client
-
+from supabase.lib.postgrest import APIError  
 # ─────────────────────────────────────────────
 # Helpers
 # ─────────────────────────────────────────────
@@ -19,18 +19,20 @@ def get_supabase_client() -> Client:
         st.stop()
     return create_client(url, key)
 
-@st.cache_data(ttl=60 * 5, show_spinner=False)
-def get_lookup_df(_client: Client) -> pd.DataFrame:
-    """Lightweight cached pulltags view (job, lot, status)."""
-    res = (
-        _client.table("pulltags")
-        .select("job_number, lot_number, status")
-        .execute()
-    )
-    if res.error:
-        st.error(res.error.message)
+@st.cache_data(ttl=300)
+def get_lookup_df(_client):
+    try:
+        res = (
+            _client.table("pulltags")
+            .select("job_number, lot_number, status")
+            .execute()
+        )
+        # v2.x succeeds → res is APIResponse, just grab .data
+        return pd.DataFrame(res.data)
+    except APIError as e:
+        st.error(f"Supabase error {e.code}: {e.message}")
         st.stop()
-    return pd.DataFrame(res.data)
+
 
 
 def generate_pulltag_pdf(df: pd.DataFrame, title: str | None = None) -> bytes:
