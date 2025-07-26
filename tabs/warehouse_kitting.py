@@ -139,6 +139,7 @@ def run():
 
     # 5. Group original pulltags by item_code
     pulltags_dict = df.groupby("item_code")
+    summary_df = []
 
     try:
         for _, row in editable_df.iterrows():
@@ -214,26 +215,17 @@ def run():
                     "kitted_on": now,
                     "updated_by": user
                 }).eq("uid", uid).execute()
-        #here
 
-        # Generate PDF before triggering rerun
-        summary_df = []
-        for i, (_, tag_row) in enumerate(matching_rows.iterrows()):
-            uid = tag_row["uid"]
-            job = tag_row["job_number"]
-            lot = tag_row["lot_number"]
-            qty = dist_kitted[i]
-            #here
-            summary_df.append({
-                "job_number": job,
-                "lot_number": lot,
-                "cost_code": cost_code,
-                "item_code": item_code,
-                "quantity": qty,
-                "kitted_by": user,
-                "kitted_on": now
-            })
-
+                #here
+                summary_df.append({
+                    "job_number": job,
+                    "lot_number": lot,
+                    "cost_code": cost_code,
+                    "item_code": item_code,
+                    "quantity": qty,
+                    "kitted_by": user,
+                    "kitted_on": now
+                })
         
         pdf_df = pd.DataFrame(summary_df)
         pdf_bytes = generate_pulltag_pdf(pdf_df, title=f"Kitting Summary for Batch {batch_id}")
