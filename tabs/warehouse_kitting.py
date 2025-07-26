@@ -55,6 +55,19 @@ def run():
     user = st.session_state.get("username", "unknown")
     now = datetime.now(ZoneInfo("America/Los_Angeles")).isoformat()
     
+    # Handle cached success state + PDF after submission
+    if st.session_state.get("last_kitted_pdf"):
+        pdf_info = st.session_state.pop("last_kitted_pdf")
+        st.download_button(
+            label="📄 Download Kitting Summary PDF",
+            data=pdf_info["data"],
+            file_name=pdf_info["filename"],
+            mime="application/pdf"
+        )
+    
+    if st.session_state.pop("show_success", False):
+        st.success("✅ Batch kitting complete!")
+
     #reprint older batches section, only initial kits here
 
     st.header("📄 Reprint Kitting Summary")
@@ -240,16 +253,16 @@ def run():
         
         pdf_df = pd.DataFrame(summary_df)
         pdf_bytes = generate_pulltag_pdf(pdf_df, title=f"Kitting Summary for Batch {batch_id}")
-        
-        st.download_button(
-            label="📄 Download Kitting Summary PDF",
-            data=pdf_bytes,
-            file_name=f"kitting_{batch_id}.pdf",
-            mime="application/pdf"
-        )
 
-        st.success("✅ Batch kitting complete!")
-        st.rerun() #prevent double submission
+        #here
+        st.session_state["last_kitted_pdf"] = {
+            "data": pdf_bytes,
+            "filename": f"kitting_{batch_id}.pdf",
+            "title": f"Kitting Summary for Batch {batch_id}"
+        }
+        st.session_state["show_success"] = True
+        st.rerun()
+        
 
     except Exception as e:
         st.error(f"❌ Error during submission: {e}")
