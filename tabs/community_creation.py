@@ -86,92 +86,100 @@ def run():
                                 st.code(resp.text)
             except Exception as e:
                 st.error(f"⚠️ Could not read file: {e}")
-
+                
     # ——— Tab 2: Edit Existing ———
     with tab2:
         st.subheader("✏️ Edit or Add Inline")
-
-        # Persist search query
+    
+        # 1️⃣ Persist the search query itself
         q = tracked_input(
             "Search job_number or roof_type",
             key="search_query",
             username=username,
             tab="community_creation",
-            supabase=supabase
+            supabase=supabase,
         )
-
-        if st.button("🔍 Search"):
+    
+        # 2️⃣ Fetch from Supabase only when user clicks Search
+        if st.button("🔍 Search", key="search_btn"):
             query = supabase.table("communities").select("*").limit(500)
             if q:
                 query = query.or_(f"job_number.ilike.*{q}*,roof_type.ilike.*{q}*")
             res = query.execute()
-
-            if res.data:
+    
+            if res.data:                                   # found rows
                 df = pd.DataFrame(res.data)
-                # add blank row for new entry
-                df = pd.concat([
-                    df,
-                    pd.DataFrame([{
-                        "job_number":    "",
-                        "roof_type":     "",
-                        "cost_code":     "",
-                        "item_code":     "",
-                        "uom":           "",
-                        "item_code_qty": ""
-                    }])
-                ], ignore_index=True)
-
+                # add one blank row so users can insert a brand‑new record
+                df = pd.concat(
+                    [
+                        df,
+                        pd.DataFrame(
+                            [
+                                dict(
+                                    job_number="",
+                                    roof_type="",
+                                    cost_code="",
+                                    item_code="",
+                                    uom="",
+                                    item_code_qty="",
+                                )
+                            ]
+                        ),
+                    ],
+                    ignore_index=True,
+                )
+                st.session_state["comm_df"] = df           # 🔒 cache it
+            else:
+                st.warning("No matching communities found.")
+                st.session_state.pop("comm_df", None)      # clear stale cache
+    
+        # 3️⃣ Show the editor only if we have something cached
+        if "comm_df" in st.session_state:
+            with st.form("editor_form", clear_on_submit=False):
                 edited = st.data_editor(
-                    df,
+                    st.session_state["comm_df"],
                     use_container_width=True,
                     num_rows="dynamic",
-                    key="editor"
+                    key="editor",
                 )
-
-                with st.expander("⚠️ Review & Submit Changes"):
-                    confirm2 = st.checkbox("I have reviewed all edits and new rows")
-                    if confirm2 and st.button("💾 Save Changes"):
-                        updates, errors = [], []
-                        for row in edited.to_dict("records"):
-                            # required fields
-                            if not (row["job_number"] and row["roof_type"] and row["cost_code"]):
-                                errors.append({"row": row, "error": "Missing required field"})
-                                continue
-                            # leave item_code_qty as-is
-                            updates.append(row)
-
+    
+                submitted = st.form_submit_button("💾 Save Changes")
+                if submitted:
+                    updates, errors = [], []
+                    for row in edited.to_dict("records"):
+                        # required fields
+                        if not (row["job_number"] and row["roof_type"] and row["cost_code"]):
+                            errors.append({"row": row, "error": "Missing required field"})
+                            continue
+                        updates.append(row)
+    
+                    if updates:
                         resp = requests.post(
                             SUPABASE_EDGE_URL,
                             headers={
                                 "Content-Type": "application/json",
-                                "Authorization": f"Bearer {SUPABASE_KEY}"
+                                "Authorization": f"Bearer {SUPABASE_KEY}",
                             },
-                            data=json.dumps({"records": updates})
+                            data=json.dumps({"records": updates}),
                         )
                         if resp.status_code == 200:
                             r = resp.json()
                             st.success(f"✅ {r['inserted']} row(s) processed")
-                            all_errors = errors + r.get("errors", [])
-                            if all_errors:
-                                err_df = pd.DataFrame([
-                                    {**e["row"], "error_reason": e["error"]}
-                                    for e in all_errors
-                                ])
-                                st.error("⚠️ Issues detected:")
-                                st.dataframe(err_df, use_container_width=True)
-                                buf = io.StringIO()
-                                err_df.to_csv(buf, index=False)
-                                st.download_button(
-                                    "⬇️ Download Errors CSV",
-                                    buf.getvalue(),
-                                    "community_edit_errors.csv",
-                                    "text/csv"
-                                )
+                            errors.extend(r.get("errors", []))
                         else:
                             st.error(f"❌ Submit failed: {resp.status_code}")
                             st.code(resp.text)
-            else:
-                st.info("No matching communities found.")
+    
+                    # show any client‑side or server‑side issues
+                    if errors:
+                        err_df = pd.DataFrame(
+                            [{**e["row"], "error_reason": e["error"]} for e in errors]
+                        )
+                        st.error("⚠️ Issues detected while saving:")
+                        st.dataframe(err_df, use_container_width=True)
+    
+                    # always keep latest edits in cache so grid never disappears
+                    st.session_state["comm_df"] = edited
 
     # ——— Tab 3: Manually Create ———
     with tab3:
