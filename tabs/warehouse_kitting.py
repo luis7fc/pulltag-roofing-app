@@ -9,13 +9,90 @@ import os
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_KEY = os.environ["SUPABASE_KEY"]
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+#helper function to make a pdf
+def generate_pulltag_pdf(df: pd.DataFrame, title: str | None = None) -> bytes:
+    """Return PDF bytes summarising requested pulltags, ordered by lot."""
+    df_sorted = (
+        df.assign(lot_number_num=pd.to_numeric(df["lot_number"], errors="ignore"))
+          .sort_values(["lot_number_num", "item_code"], kind="stable")
+          .drop(columns="lot_number_num")
+    )
+
+    pdf = FPDF()
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.add_page()
+    pdf.set_font("Arial", size=12)
+    title_text = title or "Pulltag Request Summary"
+    pdf.cell(0, 10, txt=title_text, ln=True, align="C")
+    pdf.ln(4)
+
+    # 👇  add Cost column
+    headers     = ["Job", "Lot", "Cost", "Item", "Qty", "By", "Time"]
+    col_widths  = [25,    25,   25,    30,    15,   24,   40]
+
+    for header, w in zip(headers, col_widths):
+        pdf.cell(w, 8, header, border=1, align="C")
+    pdf.ln()
+    #here
+    # Add row data
+    for _, row in df_sorted.iterrows():
+        pdf.cell(col_widths[0], 8, str(row["job_number"]), border=1)
+        pdf.cell(col_widths[1], 8, str(row["lot_number"]), border=1)
+        pdf.cell(col_widths[2], 8, str(row["cost_code"]), border=1)
+        pdf.cell(col_widths[3], 8, str(row["item_code"]), border=1)
+        pdf.cell(col_widths[4], 8, str(row["quantity"]), border=1, align="R")
+        pdf.cell(col_widths[5], 8, str(row.get("kitted_by", "")), border=1)
+        pdf.cell(col_widths[6], 8, str(row.get("kitted_on", ""))[:16], border=1)  # truncate for fit
+        pdf.ln()
+        
+    return pdf.output(dest="S").encode("latin1")
 
 def run():
     st.title("🏗️ Warehouse Kitting")
 
     user = st.session_state.get("username", "unknown")
     now = datetime.now(ZoneInfo("America/Los_Angeles")).isoformat()
+    
+    #reprint older batches section, only initial kits here
 
+    st.header("📄 Reprint Kitting Summary")
+    
+    reprint_batch = st.text_input("Enter a batch ID to reprint:")
+    st.caption("Reprints only show original kits from this tab (not backorders).")
+    
+    if reprint_batch:
+        result = supabase.table("kitting_logs").select("*") \
+            .eq("batch_id", reprint_batch).eq("kitting_type", "initial").execute()
+        data = result.data or []
+    
+        if not data:
+            st.warning("No initial kitting logs found for this batch.")
+        else:
+            #here
+            df = pd.DataFrame([
+                {
+                    "job_number": r["job_number"],
+                    "lot_number": r["lot_number"],
+                    "cost_code": r["cost_code"],
+                    "item_code": r["item_code"],
+                    "quantity": r["quantity"],
+                    "kitted_by": r.get("kitted_by", ""),
+                    "kitted_on": r.get("kitted_on", "")
+                }
+                for r in data
+            ])
+            
+            pdf_bytes = generate_pulltag_pdf(df, title=f"Reprint: Batch {reprint_batch}")
+            st.download_button(
+                label="Download Reprint PDF",
+                data=pdf_bytes,
+                file_name=f"kitting_{reprint_batch}_reprint.pdf",
+                mime="application/pdf"
+            )
+    
+    st.markdown("---")  # Divider before the actual kitting workflow
+
+    
     # 1. Filter for un-kitted batches only
     batch_data = (
         supabase.table("pulltags")
@@ -137,9 +214,39 @@ def run():
                     "kitted_on": now,
                     "updated_by": user
                 }).eq("uid", uid).execute()
+        #here
+
+        # Generate PDF before triggering rerun
+        summary_df = []
+        for i, (_, tag_row) in enumerate(matching_rows.iterrows()):
+            uid = tag_row["uid"]
+            job = tag_row["job_number"]
+            lot = tag_row["lot_number"]
+            qty = dist_kitted[i]
+            #here
+            summary_df.append({
+                "job_number": job,
+                "lot_number": lot,
+                "cost_code": cost_code,
+                "item_code": item_code,
+                "quantity": qty,
+                "kitted_by": user,
+                "kitted_on": now
+            })
+
+        
+        pdf_df = pd.DataFrame(summary_df)
+        pdf_bytes = generate_pulltag_pdf(pdf_df, title=f"Kitting Summary for Batch {batch_id}")
+        
+        st.download_button(
+            label="📄 Download Kitting Summary PDF",
+            data=pdf_bytes,
+            file_name=f"kitting_{batch_id}.pdf",
+            mime="application/pdf"
+        )
 
         st.success("✅ Batch kitting complete!")
-        st.experimental_rerun()  # Prevent double submission on reload
+        st.rerun() #prevent double submission
 
     except Exception as e:
         st.error(f"❌ Error during submission: {e}")
