@@ -15,6 +15,7 @@ from tabs import (
     user_management,
     items_editor,
     roof_editor,
+    warehouse_manager,
 )
 
 st.set_page_config(page_title="Roofing Pulltag System", layout="wide")
@@ -92,6 +93,7 @@ exec_tabs = {
     "👤 User Management":       user_management.run,
     "🧾 Items Master Editor":   items_editor.run,
     "🏠 Roof Types Editor":     roof_editor.run,
+    "🏢 Manage Warehouses":     warehouse_manager.run,
 }
 tabs_by_role = {
     "exec":      exec_tabs,
