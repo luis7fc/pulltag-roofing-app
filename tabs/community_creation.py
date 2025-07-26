@@ -91,7 +91,6 @@ def run():
     with tab2:
         st.subheader("✏️ Edit or Add Inline")
     
-        # 1️⃣ Persist the search query itself
         q = tracked_input(
             "Search job_number or roof_type",
             key="search_query",
@@ -100,16 +99,14 @@ def run():
             supabase=supabase,
         )
     
-        # 2️⃣ Fetch from Supabase only when user clicks Search
         if st.button("🔍 Search", key="search_btn"):
             query = supabase.table("communities").select("*").limit(500)
             if q:
                 query = query.or_(f"job_number.ilike.*{q}*,roof_type.ilike.*{q}*")
             res = query.execute()
     
-            if res.data:                                   # found rows
+            if res.data:
                 df = pd.DataFrame(res.data)
-                # add one blank row so users can insert a brand‑new record
                 df = pd.concat(
                     [
                         df,
@@ -128,12 +125,11 @@ def run():
                     ],
                     ignore_index=True,
                 )
-                st.session_state["comm_df"] = df           # 🔒 cache it
+                st.session_state["comm_df"] = df
             else:
                 st.warning("No matching communities found.")
-                st.session_state.pop("comm_df", None)      # clear stale cache
+                st.session_state.pop("comm_df", None)
     
-        # 3️⃣ Show the editor only if we have something cached
         if "comm_df" in st.session_state:
             with st.form("editor_form", clear_on_submit=False):
                 edited = st.data_editor(
@@ -147,9 +143,21 @@ def run():
                 if submitted:
                     updates, errors = [], []
                     for row in edited.to_dict("records"):
-                        # required fields
-                        if not (row["job_number"] and row["roof_type"] and row["cost_code"]):
-                            errors.append({"row": row, "error": "Missing required field"})
+    
+                        # ---------- NEW guard ------------
+                        if all(
+                            not str(row.get(col, "")).strip()
+                            for col in ("job_number", "roof_type", "cost_code")
+                        ):
+                            continue  # skip the untouched blank row
+                        # ---------------------------------
+    
+                        if not (
+                            row["job_number"] and row["roof_type"] and row["cost_code"]
+                        ):
+                            errors.append(
+                                {"row": row, "error": "Missing required field"}
+                            )
                             continue
                         updates.append(row)
     
@@ -170,7 +178,6 @@ def run():
                             st.error(f"❌ Submit failed: {resp.status_code}")
                             st.code(resp.text)
     
-                    # show any client‑side or server‑side issues
                     if errors:
                         err_df = pd.DataFrame(
                             [{**e["row"], "error_reason": e["error"]} for e in errors]
@@ -178,8 +185,8 @@ def run():
                         st.error("⚠️ Issues detected while saving:")
                         st.dataframe(err_df, use_container_width=True)
     
-                    # always keep latest edits in cache so grid never disappears
                     st.session_state["comm_df"] = edited
+
 
     # ——— Tab 3: Manually Create ———
     with tab3:
