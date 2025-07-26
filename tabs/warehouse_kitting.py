@@ -4,6 +4,8 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 from supabase import create_client
 import os
+from fpdf import FPDF
+
 
 # Supabase client
 SUPABASE_URL = os.environ["SUPABASE_URL"]
