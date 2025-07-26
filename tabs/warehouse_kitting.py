@@ -67,7 +67,10 @@ def run():
     
     if st.session_state.pop("show_success", False):
         st.success("✅ Batch kitting complete!")
+        st.toast("🎉 Kitting data submitted successfully.")
+        st.balloons()
 
+    
     #reprint older batches section, only initial kits here
 
     st.header("📄 Reprint Kitting Summary")
