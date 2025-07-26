@@ -37,7 +37,7 @@ def run():
                 else:
                     supabase.table("warehouses").insert({"name": new_name.strip()}).execute()
                     st.success(f"Warehouse '{new_name}' added successfully!")
-                    st.experimental_rerun()
+                    st.rerun()
 
     st.markdown("---")
     st.subheader("🗑️ Delete Warehouse")
@@ -48,4 +48,4 @@ def run():
             warehouse_id = warehouses.loc[warehouses["name"] == to_delete, "id"].values[0]
             supabase.table("warehouses").delete().eq("id", warehouse_id).execute()
             st.success(f"Warehouse '{to_delete}' deleted.")
-            st.experimental_rerun()
+            st.rerun()
