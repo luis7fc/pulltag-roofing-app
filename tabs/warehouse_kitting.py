@@ -103,8 +103,13 @@ def run():
         .not_.is_("batch_id", None)
         .execute()
     )
+    
     batches = sorted({row["batch_id"] for row in batch_data.data})
     batch_id = st.selectbox("Select a batch to kit", batches)
+    #enter warehouse
+    warehouses = supabase.table("warehouses").select("name").order("name").execute().data
+    warehouse_options = [w["name"] for w in warehouses]
+    selected_warehouse = st.selectbox("Select Warehouse", warehouse_options)
 
     if not batch_id:
         st.stop()
@@ -181,7 +186,8 @@ def run():
                         "batch_id": batch_id,
                         "item_code": item_code,
                         "shorted_qty": shortfall,
-                        "fulfilled_qty": 0
+                        "fulfilled_qty": 0,
+                        "warehouse": selected_warehouse,
                     }).execute()
 
             # Insert logs + update pulltags
@@ -203,6 +209,7 @@ def run():
                     "lot_number": lot,
                     "quantity": qty,
                     "note": note,
+                    "warehouse": selected_warehouse,
                     "kitting_type": "initial",
                     "kitted_by": user,
                     "kitted_on": now
@@ -213,6 +220,8 @@ def run():
                     "kitted_qty": qty,
                     "shorted": shorted,
                     "backorder_qty": shorted,
+                    "warehouse": selected_warehouse,
+                    "backorder_status": "pending" if shorted > 0 else "none",
                     "status": "kitted",
                     "kitted_on": now,
                     "updated_by": user
