@@ -154,9 +154,15 @@ def run():
     df["kitted_qty"] = 0
 
     st.subheader("📦 Backorders to Fulfill")
+    editable_cols = ["id", "batch_id", "item_code", "shorted_qty", "fulfilled_qty", "remaining", "kitted_qty", "note"]
     with st.form("backorder_form"):
-        edited = st.data_editor(df[["batch_id", "item_code", "shorted_qty", "fulfilled_qty", "remaining", "kitted_qty", "note"]],
-                                use_container_width=True, key="bo_table")
+        edited = st.data_editor(df[editable_cols], use_container_width=True, key="bo_table", column_config={
+            "id": st.column_config.TextColumn(disabled=True, label=""),
+            "shorted_qty": st.column_config.NumberColumn(disabled=True),
+            "fulfilled_qty": st.column_config.NumberColumn(disabled=True),
+            "remaining": st.column_config.NumberColumn(disabled=True),
+        })
+
         submitted = st.form_submit_button("✅ Submit Backorder Fulfillment")
 
     if not submitted:
