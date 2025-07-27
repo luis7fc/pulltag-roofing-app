@@ -55,7 +55,10 @@ def run():
 
     user = st.session_state.get("username", "unknown")
     now = datetime.now(ZoneInfo("America/Los_Angeles")).isoformat()
-
+ 
+    warehouses = supabase.table("warehouses").select("name").order("name").execute().data
+    warehouse_options = [w["name"] for w in warehouses]
+ 
     # Show last success + PDF if applicable
     if st.session_state.get("last_bo_pdf"):
         pdf_info = st.session_state.pop("last_bo_pdf")
@@ -103,8 +106,6 @@ def run():
 
 
     # Warehouse selection
-    warehouses = supabase.table("warehouses").select("name").order("name").execute().data
-    warehouse_options = [w["name"] for w in warehouses]
     selected_warehouse = st.selectbox("Select Warehouse", warehouse_options)
 
     # Fetch batch_ids with unresolved backorders
