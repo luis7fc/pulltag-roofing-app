@@ -12,7 +12,43 @@ SUPABASE_KEY = os.environ["SUPABASE_KEY"]
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # Assumes you already defined generate_pulltag_pdf somewhere
-from warehouse_kitting import generate_pulltag_pdf
+def generate_pulltag_pdf(df: pd.DataFrame, title: str | None = None) -> bytes:
+    """Return PDF bytes summarising requested pulltags, ordered by lot."""
+    df_sorted = (
+        df.assign(lot_number_num=pd.to_numeric(df["lot_number"], errors="ignore"))
+          .sort_values(["lot_number_num", "item_code"], kind="stable")
+          .drop(columns="lot_number_num")
+    )
+
+    pdf = FPDF()
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.add_page()
+    pdf.set_font("Arial", size=12)
+    title_text = title or "Pulltag Request Summary"
+    pdf.cell(0, 10, txt=title_text, ln=True, align="C")
+    pdf.ln(4)
+
+    # 👇  add Cost column
+    headers     = ["Job", "Lot", "Cost", "Item", "Qty", "By", "Time"]
+    col_widths  = [25,    25,   25,    30,    15,   24,   40]
+
+    for header, w in zip(headers, col_widths):
+        pdf.cell(w, 8, header, border=1, align="C")
+    pdf.ln()
+    #here
+    # Add row data
+    for _, row in df_sorted.iterrows():
+        pdf.cell(col_widths[0], 8, str(row["job_number"]), border=1)
+        pdf.cell(col_widths[1], 8, str(row["lot_number"]), border=1)
+        pdf.cell(col_widths[2], 8, str(row["cost_code"]), border=1)
+        pdf.cell(col_widths[3], 8, str(row["item_code"]), border=1)
+        pdf.cell(col_widths[4], 8, str(row["quantity"]), border=1, align="R")
+        pdf.cell(col_widths[5], 8, str(row.get("kitted_by", "")), border=1)
+        pdf.cell(col_widths[6], 8, str(row.get("kitted_on", ""))[:16], border=1)  # truncate for fit
+        pdf.ln()
+        
+    return pdf.output(dest="S").encode("latin1")
+
 
 def run():
     st.title("🔁 Backorder Kitting")
@@ -29,6 +65,42 @@ def run():
         st.success("✅ Backorder batch submitted!")
         st.toast("🎉 Backorder data submitted successfully.")
         st.balloons()
+    #print old backorder batches:
+
+    st.header("📄 Reprint Backorder Kitting Summary")
+    
+    with st.expander("Show backorder reprint options"):
+        #update here
+        with st.expander("📅 Reprint by Date"):
+            date_range = st.date_input("Filter by date range", [], format="YYYY-MM-DD")
+        
+        filter_warehouse = st.selectbox("Filter by warehouse (optional)", ["All"] + warehouse_options)
+        filter_batch = st.text_input("Filter by Batch ID (optional)")
+        
+        query = supabase.table("kitting_logs").select("*").eq("kitting_type", "backorder")
+        
+        if filter_batch:
+            query = query.eq("batch_id", filter_batch)
+        if filter_warehouse != "All":
+            query = query.eq("warehouse", filter_warehouse)
+        
+        logs = query.execute().data or []
+        
+        if logs and len(date_range) == 2:
+            start, end = pd.to_datetime(date_range[0]), pd.to_datetime(date_range[1])
+            logs = [r for r in logs if start <= pd.to_datetime(r["kitted_on"]) <= end]
+        
+        if not logs:
+            st.info("No matching backorder logs found.")
+        else:
+            df_logs = pd.DataFrame(logs)
+            df_logs = df_logs[[
+                "job_number", "lot_number", "cost_code", "item_code",
+                "quantity", "kitted_by", "kitted_on"
+            ]]
+            pdf_bytes = generate_pulltag_pdf(df_logs, title="Backorder Kitting Reprint")
+            st.download_button("📥 Download Reprint PDF", pdf_bytes, file_name="backorder_kitting_reprint.pdf", mime="application/pdf")
+
 
     # Warehouse selection
     warehouses = supabase.table("warehouses").select("name").order("name").execute().data
