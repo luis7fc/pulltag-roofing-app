@@ -16,6 +16,7 @@ from tabs import (
     items_editor,
     roof_editor,
     warehouse_manager,
+    addon_kitting,
 )
 
 st.set_page_config(page_title="Roofing Pulltag System", layout="wide")
@@ -94,6 +95,7 @@ exec_tabs = {
     "🧾 Items Master Editor":   items_editor.run,
     "🏠 Roof Types Editor":     roof_editor.run,
     "🏢 Manage Warehouses":     warehouse_manager.run,
+    "➕ Add-On Kitting":        addon_kitting.run
 }
 tabs_by_role = {
     "exec":      exec_tabs,
@@ -102,6 +104,7 @@ tabs_by_role = {
     "warehouse": {
         "🛠️ Warehouse Kitting": warehouse_kitting.run,
         "🔁 Backorder Kitting":  backorder_kitting.run,
+        "➕ Add-On Kitting":    addon_kitting.run,
     },
 }
 
