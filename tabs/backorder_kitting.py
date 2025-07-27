@@ -101,6 +101,20 @@ def run():
                 "job_number", "lot_number", "cost_code", "item_code",
                 "quantity", "kitted_by", "kitted_on"
             ]]
+
+            #items total summary
+            # 📊 Summary by item_code
+            summary_by_item = (
+                df_logs.groupby("item_code")
+                .agg(total_kitted=("quantity", "sum"))
+                .reset_index()
+                .sort_values("item_code")
+            )
+            
+            st.caption("Item Summary from Filtered Reprint Logs")
+            st.dataframe(summary_by_item, use_container_width=True)
+
+            
             pdf_bytes = generate_pulltag_pdf(df_logs, title="Backorder Kitting Reprint")
             st.download_button("📥 Download Reprint PDF", pdf_bytes, file_name="backorder_kitting_reprint.pdf", mime="application/pdf")
 
@@ -112,11 +126,13 @@ def run():
     batch_results = (
         supabase.table("batch_backorders")
         .select("batch_id", "shorted_qty", "fulfilled_qty")
-        .gt("shorted_qty", "fulfilled_qty")
         .execute()
     )
     
-    open_batches = sorted(set(row["batch_id"] for row in batch_results.data))
+    # Filter in Python
+    batch_data = [r for r in batch_results.data or [] if r["shorted_qty"] > r["fulfilled_qty"]]
+    open_batches = sorted(set(row["batch_id"] for row in batch_data))
+
     if not open_batches:
         st.info("No batches with open backorders.")
         return
@@ -124,13 +140,11 @@ def run():
     selected_batch = st.selectbox("Select a Backorder Batch", open_batches)
     
     # Load open backorders
-    result = supabase.table("batch_backorders").select("*") \
-        .eq("batch_id", selected_batch) \
-        .gt("shorted_qty", "fulfilled_qty") \
-        .order("item_code") \
-        .execute()
-
+    # Fetch all backorders for selected batch, then filter manually
+    result = supabase.table("batch_backorders").select("*").eq("batch_id", selected_batch).order("item_code").execute()
     rows = result.data or []
+    rows = [r for r in rows if r["shorted_qty"] > r["fulfilled_qty"]]
+
     if not rows:
         st.info("No open backorders.")
         return
