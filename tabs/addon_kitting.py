@@ -28,7 +28,7 @@ def run():
     # Entry form for multiple items
     st.subheader("📝 Enter Add-On Kitting Items")
     with st.form("addon_form"):
-        input_rows = st.experimental_data_editor(
+        input_rows = st.data_editor(
             pd.DataFrame([{ "item_code": "", "cost_code": "", "job_number": "", "lot_number": "", "quantity": 0 }]),
             num_rows="dynamic",
             use_container_width=True,
