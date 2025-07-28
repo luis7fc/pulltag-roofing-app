@@ -44,11 +44,12 @@ def fetch_kitting_logs(
 ) -> pd.DataFrame:
     """
     Query kitting_logs with optional filters (at least one required),
-    then left-join items_master in pandas to pick up UOM/Description.
+    then left-join uom from items_master (but keep description from logs).
     """
     if not any([batch_ids, warehouses, k_types, start_date, end_date]):
         raise ValueError("Add at least one filter before querying.")
 
+    # Build base query to kitting_logs
     qb = supabase.table("kitting_logs").select("*")
 
     if batch_ids:
@@ -60,7 +61,7 @@ def fetch_kitting_logs(
     if start_date:
         qb = qb.gte("kitted_on", start_date.isoformat())
     if end_date:
-        qb = qb.lt("kitted_on",  end_date.isoformat())
+        qb = qb.lt("kitted_on", end_date.isoformat())
 
     logs = qb.execute().data or []
     if not logs:
@@ -68,39 +69,33 @@ def fetch_kitting_logs(
 
     df_logs = pd.DataFrame(logs)
 
-    # Grab only the item_codes we need, fetch their UOM/description once
+    # Only pull UOM from items_master — leave description alone
     item_codes = df_logs["item_code"].unique().tolist()
     items = (
         supabase.table("items_master")
-        .select("item_code,uom,description")
+        .select("item_code,uom")
         .in_("item_code", item_codes)
         .execute()
         .data
     )
-    df_items = pd.DataFrame(items) if items else pd.DataFrame(columns=["item_code", "uom", "description"])
+    df_items = pd.DataFrame(items) if items else pd.DataFrame(columns=["item_code", "uom"])
 
-    # Left-join (default uom = EA, description = "")
+    # Merge in UOM; preserve description from logs
     df = df_logs.merge(df_items, how="left", on="item_code")
+
+    # Ensure UOM column exists
     if "uom" not in df.columns:
         df["uom"] = "EA"
     else:
         df["uom"].fillna("EA", inplace=True)
-    
-    if "description" not in df.columns:
-        df["description"] = ""
-    else:
-        df["description"].fillna("", inplace=True)
 
-
-    # Re-order for nice display
+    # Reorder columns for display/export
     cols = [
         "id", "batch_id", "job_number", "lot_number",
         "item_code", "quantity", "uom", "description",
         "cost_code", "warehouse", "kitting_type", "kitted_on"
     ]
     return df[cols]
-
-
 # ─────────────────────────────────────────────────────────────────────────────
 # TXT builder (unchanged from solar exporter)
 # ─────────────────────────────────────────────────────────────────────────────
