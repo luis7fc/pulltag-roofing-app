@@ -81,8 +81,16 @@ def fetch_kitting_logs(
 
     # Left-join (default uom = EA, description = "")
     df = df_logs.merge(df_items, how="left", on="item_code")
-    df["uom"].fillna("EA", inplace=True)
-    df["description"].fillna("",   inplace=True)
+    if "uom" not in df.columns:
+        df["uom"] = "EA"
+    else:
+        df["uom"].fillna("EA", inplace=True)
+    
+    if "description" not in df.columns:
+        df["description"] = ""
+    else:
+        df["description"].fillna("", inplace=True)
+
 
     # Re-order for nice display
     cols = [
@@ -126,15 +134,15 @@ def run() -> None:
         st.rerun()
 
     # 1) Filters
-    st.subheader("1 • Filters")
+    st.subheader("Filters")
     colA, colB = st.columns(2)
     batch_filter = colA.text_input("Batch-ID(s) (comma-separated)", key="batch_filter")
     warehouses   = colB.multiselect("Warehouse filter", distinct_values("warehouse", "kitting_logs"))
 
     colC, colD = st.columns(2)
-    k_types     = colC.multiselect("Kitting Type filter", distinct_values("kitting_type", "kitting_logs"))
-    start_date  = colD.date_input("Start date (≥)", value=None)
-    end_date    = st.date_input("End date (<)", value=None)
+    start_date  = colC.date_input("Start date (≥)", value=None)
+    end_date    = colD.date_input("End date (<)", value=None)
+    k_types     = st.multiselect("Kitting Type filter", distinct_values("kitting_type", "kitting_logs"))
 
     # Convert dates to datetimes; end_date is exclusive so +1 day
     if start_date:
@@ -164,7 +172,7 @@ def run() -> None:
 
     # 2) Editable preview
     if ss.get("grid_ready"):
-        st.subheader("2 • Review / edit")
+        st.subheader("Review / edit")
         lock = {"id", "batch_id", "job_number", "lot_number",
                 "item_code", "warehouse"}
         cfg = {c: {"disabled": True} for c in lock}
@@ -178,7 +186,7 @@ def run() -> None:
         st.markdown("---")
 
     # 3) Header + export
-    st.subheader("3 • Generate Sage TXT")
+    st.subheader("Generate Sage TXT")
     c1, c2, c3 = st.columns(3)
     batch_name = c1.text_input("Batch name (header)")
     kit_date   = c2.date_input("Kit date",  value=date.today())
