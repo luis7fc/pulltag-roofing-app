@@ -200,7 +200,7 @@ def run():
         for match in matches:
             try:
                 res = supabase.table("pulltags").update({"status": "exported"}).match(match).execute()
-                if res.status_code >= 400:
+                if res.status >= 400:
                     st.warning(f"⚠️ Pulltag update failed: {match}")
             except Exception as e:
                 st.error(f"Error updating pulltags: {e}")
@@ -211,7 +211,7 @@ def run():
                 "last_exported_on": export_time,
                 "export_batch_id": ss.export_batch_id
             }).in_("id", export_ids).execute()
-            if res.status_code >= 400:
+            if res.status >= 400:
                 st.error("❌ Failed to update kitting_logs.")
                 st.stop()
         except Exception as e:
