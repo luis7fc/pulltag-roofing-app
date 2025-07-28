@@ -151,11 +151,11 @@ def run():
             st.error(str(e))
 
     # Assign export_batch_id
-    if "user" not in st.session_state:
+    if "username" not in st.session_state:
         st.warning("User session not found. Cannot assign export_batch_id.")
         st.stop()
-
-    username = st.session_state["user"]
+    
+    username = st.session_state["username"]
     export_batch_id = f"{username}_{random.randint(10000,99999)}"
     ss.export_batch_id = export_batch_id
     st.info(f"🧾 Export batch ID assigned: `{export_batch_id}`")
