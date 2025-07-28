@@ -219,4 +219,5 @@ def run():
             st.stop()
 
         st.success(f"TXT generated and exported as batch `{ss.export_batch_id}`.")
+        st.balloons
         st.info("Re-export using Export Batch ID filter above.")
