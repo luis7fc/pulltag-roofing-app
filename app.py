@@ -8,7 +8,7 @@ from system_monitor import show_system_metrics
 from tabs import (
     community_creation,
     budget_upload,
-    reporting,
+    sage_export,
     super_request,
     warehouse_kitting,
     backorder_kitting,
@@ -84,8 +84,9 @@ show_system_metrics(role)
 base_tabs = {
     "🏘️ Community Creation":      community_creation.run,
     "📄 Budget Upload":           budget_upload.run,
-    "📊 Reporting & Sage Export": reporting.run,
+    "📊 Sage Export":             sage_export.run,
 }
+
 exec_tabs = {
     **base_tabs,
     "📦 Super Request":        super_request.run,
@@ -97,14 +98,18 @@ exec_tabs = {
     "🏢 Manage Warehouses":     warehouse_manager.run,
     "➕ Add-On Kitting":        addon_kitting.run
 }
+
 tabs_by_role = {
     "exec":      exec_tabs,
     "admin":     base_tabs,
-    "super":     {"📦 Super Request": super_request.run},
+    "super": {
+        "📦 Super Request": super_request.run,
+        "🏘️ Community Creation": community_creation.run,
+    },
     "warehouse": {
         "🛠️ Warehouse Kitting": warehouse_kitting.run,
-        "🔁 Backorder Kitting":  backorder_kitting.run,
-        "➕ Add-On Kitting":    addon_kitting.run,
+        "🔁 Backorder Kitting": backorder_kitting.run,
+        "➕ Add-On Kitting": addon_kitting.run,
     },
 }
 
