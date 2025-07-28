@@ -1,7 +1,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # pages/sage_export.py – FINAL VERSION with batch export logic and filters
 # ─────────────────────────────────────────────────────────────────────────────
-import io, os, re, uuid, random
+import io, os, re, random
 from datetime import date, datetime
 from pytz import timezone
 import pandas as pd
@@ -208,12 +208,11 @@ def run():
                             .match(match)
                             .execute())
         
-            if res.error:                        # works for every supabase-py version
-                st.warning(f"⚠️ Pulltag update failed: {match} → {res.error}")
+            err = getattr(res, "error", None)
+            if err:
+                st.warning(f"⚠️ Pulltag update failed: {match} → {err}")
         
-        # ────────────────────────────────────────────────────────────────
-        # Update kitting_logs
-        # ────────────────────────────────────────────────────────────────
+        # ── kitting_logs block ─────────────────────────────────────────
         res = (supabase.table("kitting_logs")
                         .update({
                             "last_exported_on": export_time,
@@ -222,9 +221,11 @@ def run():
                         .in_("id", export_ids)
                         .execute())
         
-        if res.error:
-            st.error(f"❌ Failed to update kitting_logs → {res.error}")
+        err = getattr(res, "error", None)
+        if err:
+            st.error(f"❌ Failed to update kitting_logs → {err}")
             st.stop()
+        
 
 
         st.success(f"TXT generated and exported as batch `{ss.export_batch_id}`.")
