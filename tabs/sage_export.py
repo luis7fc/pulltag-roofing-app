@@ -192,31 +192,40 @@ def run():
         export_time = datetime.now(timezone("US/Pacific")).isoformat()
         export_ids = ss.edited_df["id"].tolist()
 
+        # ────────────────────────────────────────────────────────────────
         # Update pulltags
+        # ────────────────────────────────────────────────────────────────
         matches = [
-            {"job_number": r.job_number, "lot_number": r.lot_number, "item_code": r.item_code}
+            {"job_number": r.job_number,
+             "lot_number": r.lot_number,
+             "item_code":  r.item_code}
             for r in ss.edited_df.itertuples()
         ]
+        
         for match in matches:
-            try:
-                res = supabase.table("pulltags").update({"status": "exported"}).match(match).execute()
-                if res.status >= 400:
-                    st.warning(f"⚠️ Pulltag update failed: {match}")
-            except Exception as e:
-                st.error(f"Error updating pulltags: {e}")
-
+            res = (supabase.table("pulltags")
+                            .update({"status": "exported"})
+                            .match(match)
+                            .execute())
+        
+            if res.error:                        # works for every supabase-py version
+                st.warning(f"⚠️ Pulltag update failed: {match} → {res.error}")
+        
+        # ────────────────────────────────────────────────────────────────
         # Update kitting_logs
-        try:
-            res = supabase.table("kitting_logs").update({
-                "last_exported_on": export_time,
-                "export_batch_id": ss.export_batch_id
-            }).in_("id", export_ids).execute()
-            if res.status >= 400:
-                st.error("❌ Failed to update kitting_logs.")
-                st.stop()
-        except Exception as e:
-            st.error(f"Unexpected error during kitting_log update: {e}")
+        # ────────────────────────────────────────────────────────────────
+        res = (supabase.table("kitting_logs")
+                        .update({
+                            "last_exported_on": export_time,
+                            "export_batch_id": ss.export_batch_id
+                        })
+                        .in_("id", export_ids)
+                        .execute())
+        
+        if res.error:
+            st.error(f"❌ Failed to update kitting_logs → {res.error}")
             st.stop()
+
 
         st.success(f"TXT generated and exported as batch `{ss.export_batch_id}`.")
         st.balloons
