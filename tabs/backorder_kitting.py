@@ -105,7 +105,7 @@ def run():
             #items total summary
             # 📊 Summary by item_code
             summary_by_item = (
-                df_logs.groupby("item_code")
+                df_logs.groupby(["item_code","cost_code"])
                 .agg(total_kitted=("quantity", "sum"))
                 .reset_index()
                 .sort_values("item_code")
@@ -200,7 +200,11 @@ def run():
 
             # Get matching pulltags with backorder_qty > 0
             tag_rows = supabase.table("pulltags").select("*") \
-                .eq("batch_id", row["batch_id"]).eq("item_code", row["item_code"]).gt("backorder_qty", 0).execute().data
+                .eq("batch_id", row["batch_id"]) \
+                .eq("item_code", row["item_code"]) \
+                .eq("cost_code", row["cost_code"]) \
+                .gt("backorder_qty", 0).execute().data
+
             tags_df = pd.DataFrame(tag_rows)
             tags_df = tags_df.sort_values("backorder_qty", ascending=False)
 
