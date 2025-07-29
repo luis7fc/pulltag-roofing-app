@@ -12,31 +12,52 @@ SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_KEY = os.environ["SUPABASE_KEY"]
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 #helper function to make a pdf
-def generate_pulltag_pdf(df: pd.DataFrame, title: str | None = None) -> bytes:
-    """Return PDF bytes summarising requested pulltags, ordered by lot."""
+def generate_pulltag_pdf(df: pd.DataFrame, title: str | None = None, master_df: pd.DataFrame | None = None) -> bytes:
+    """Return PDF bytes summarising requested pulltags, ordered by lot, with optional master summary page."""
+    pdf = FPDF()
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.set_font("Arial", size=12)
+
+    # Add master summary first (if provided)
+    if master_df is not None and not master_df.empty:
+        pdf.add_page()
+        pdf.cell(0, 10, txt="Master Kitted Summary", ln=True, align="C")
+        pdf.ln(4)
+
+        headers = ["Item", "Cost", "Requested", "Kitted", "Note"]
+        col_widths = [40, 30, 30, 30, 50]
+
+        for header, w in zip(headers, col_widths):
+            pdf.cell(w, 8, header, border=1, align="C")
+        pdf.ln()
+
+        for _, row in master_df.iterrows():
+            pdf.cell(col_widths[0], 8, str(row["item_code"]), border=1)
+            pdf.cell(col_widths[1], 8, str(row["cost_code"]), border=1)
+            pdf.cell(col_widths[2], 8, str(row["requested_qty"]), border=1, align="R")
+            pdf.cell(col_widths[3], 8, str(row["kitted_qty"]), border=1, align="R")
+            pdf.cell(col_widths[4], 8, str(row.get("note", "")), border=1)
+            pdf.ln()
+
+    # Add detailed lot-level breakdown
     df_sorted = (
         df.assign(lot_number_num=pd.to_numeric(df["lot_number"], errors="ignore"))
           .sort_values(["lot_number_num", "item_code"], kind="stable")
           .drop(columns="lot_number_num")
     )
 
-    pdf = FPDF()
-    pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
-    pdf.set_font("Arial", size=12)
     title_text = title or "Pulltag Request Summary"
     pdf.cell(0, 10, txt=title_text, ln=True, align="C")
     pdf.ln(4)
 
-    # 👇  add Cost column
     headers     = ["Job", "Lot", "Cost", "Item", "Qty", "By", "Time"]
     col_widths  = [25,    25,   25,    30,    15,   24,   40]
 
     for header, w in zip(headers, col_widths):
         pdf.cell(w, 8, header, border=1, align="C")
     pdf.ln()
-    #here
-    # Add row data
+
     for _, row in df_sorted.iterrows():
         pdf.cell(col_widths[0], 8, str(row["job_number"]), border=1)
         pdf.cell(col_widths[1], 8, str(row["lot_number"]), border=1)
@@ -44,10 +65,12 @@ def generate_pulltag_pdf(df: pd.DataFrame, title: str | None = None) -> bytes:
         pdf.cell(col_widths[3], 8, str(row["item_code"]), border=1)
         pdf.cell(col_widths[4], 8, str(row["quantity"]), border=1, align="R")
         pdf.cell(col_widths[5], 8, str(row.get("kitted_by", "")), border=1)
-        pdf.cell(col_widths[6], 8, str(row.get("kitted_on", ""))[:16], border=1)  # truncate for fit
+        pdf.cell(col_widths[6], 8, str(row.get("kitted_on", ""))[:16], border=1)
         pdf.ln()
         
     return pdf.output(dest="S").encode("latin1")
+
+
 
 def run():
     st.title("🏗️ Warehouse Kitting")
@@ -77,7 +100,8 @@ def run():
     
     reprint_batch = st.text_input("Enter a batch ID to reprint:")
     st.caption("Reprints only show original kits from this tab (not backorders).")
-    
+
+    #reprint update here
     if reprint_batch:
         result = supabase.table("kitting_logs").select("*") \
             .eq("batch_id", reprint_batch).eq("kitting_type", "initial").execute()
@@ -86,7 +110,6 @@ def run():
         if not data:
             st.warning("No initial kitting logs found for this batch.")
         else:
-            #here
             df = pd.DataFrame([
                 {
                     "job_number": r["job_number"],
@@ -99,14 +122,28 @@ def run():
                 }
                 for r in data
             ])
-            
-            pdf_bytes = generate_pulltag_pdf(df, title=f"Reprint: Batch {reprint_batch}")
+    
+            # 👇 Add master page based on summed lot data
+            master_df = (
+                df.groupby(["item_code", "cost_code"])
+                  .agg(requested_qty=("quantity", "sum"))
+                  .reset_index()
+            )
+            master_df["kitted_qty"] = master_df["requested_qty"]
+            master_df["note"] = ""
+    
+            pdf_bytes = generate_pulltag_pdf(
+                df, 
+                title=f"Reprint: Batch {reprint_batch}",
+                master_df=master_df
+            )
             st.download_button(
                 label="Download Reprint PDF",
                 data=pdf_bytes,
                 file_name=f"kitting_{reprint_batch}_reprint.pdf",
                 mime="application/pdf"
             )
+
     
     st.markdown("---")  # Divider before the actual kitting workflow
 
@@ -161,7 +198,7 @@ def run():
         st.stop()
 
     # 5. Group original pulltags by item_code
-    pulltags_dict = df.groupby("item_code")
+    pulltags_dict = df.groupby(["item_code", "cost_code"])
     summary_df = []
 
     try:
@@ -174,7 +211,7 @@ def run():
             total_kitted = int(row["kitted_qty"])
             note = row.get("note", "")
 
-            matching_rows = pulltags_dict.get_group(item_code).copy()
+            matching_rows = pulltags_dict.get_group((item_code, cost_code)).copy()
             allocations = matching_rows["quantity"].tolist()
             total_alloc = sum(allocations)
 
@@ -255,7 +292,7 @@ def run():
                 })
         
         pdf_df = pd.DataFrame(summary_df)
-        pdf_bytes = generate_pulltag_pdf(pdf_df, title=f"Kitting Summary for Batch {batch_id}")
+        pdf_bytes = generate_pulltag_pdf(pdf_df, title=f"Kitting Summary for Batch {batch_id}", master_df=editable_df)
 
         #here
         st.session_state["last_kitted_pdf"] = {
