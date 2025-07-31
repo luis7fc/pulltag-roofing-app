@@ -1,122 +1,24 @@
 import streamlit as st
 import pandas as pd
-import uuid
-import math
+import uuid, math, os, re, pdfplumber
 from datetime import datetime
 from supabase import create_client
-import os
-import pdfplumber
-import re
 
-
-# --- Supabase connection ---
+# ──────────────────────────────────────────────────────────────────────────
+# Supabase connection
+# ──────────────────────────────────────────────────────────────────────────
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-#Budget Parser
-def parse_pdf_budget_all_lots(pdf_path: str) -> pd.DataFrame:
-    records = []
-    job_number = None
-    community = None
-    current_lot = None
-    last_known_lot = None
+# ──────────────────────────────────────────────────────────────────────────
+# Helper: fraction-friendly quantity logic
+# ──────────────────────────────────────────────────────────────────────────
+NO_ROUND_ITEMS = {"NC134", "NC34"}
 
-    lot_header_pattern = re.compile(
-        r"""^\s*
-            (?P<lot>\d{1,4}[A-Z]?)      # 1-4 digits, optional A/B suffix  ← LOT
-            \s+\d+\s+                   # address number (throw-away)
-            .+?\(\w+\)                  # street & model in (…)
-        """,
-        re.VERBOSE,
-    )
-
-    flex_item_pattern = re.compile(
-        r"^\s*([A-Za-z0-9\(\)\+\"'#\/\-]{2,})\s+(.+?)\s+([\d.]+)\s+(EA|SQ|BNDL|ROLL|PC|BUND|BOX)\s*$"
-    )
-
-    with pdfplumber.open(pdf_path) as pdf:
-        for page in pdf.pages:
-            lines = page.extract_text().splitlines()
-            if not lines:
-                print(f"[DEBUG] No text found on page {page.page_number}")
-
-            for idx, line in enumerate(lines):
-                if re.match(r"^\d{5}-\d{3}\s", line.strip()):
-                    job_number = re.match(r"^(\d{5}-\d{3})", line.strip()).group(1)
-                    community = line.strip().split(job_number)[-1].strip()
-
-                lot_match = lot_header_pattern.match(line)
-                if lot_match:
-                    current_lot = lot_match.group(1)
-                    last_known_lot = current_lot
-
-                if line.strip().startswith("L"):
-                    continue
-
-                match = flex_item_pattern.match(line)
-                if match and last_known_lot:
-                    code, desc, qty, uom = match.groups()
-                    records.append({
-                        "Community": community,
-                        "Job Number": job_number,
-                        "Lot Number": last_known_lot,
-                        "Cost Code": code.strip().upper(),
-                        "Description": desc.strip(),
-                        "Units Budget": float(qty),
-                        "UOM": uom
-                    })
-                    
-                    print(f"[DEBUG] Parsed: job={job_number}, lot={last_known_lot}, code={code}, desc={desc}, qty={qty}, uom={uom}")
-
-
-    return pd.DataFrame(records)
-
-
-
-# Load mock or production data
-@st.cache_data
-def load_communities():
+def compute_quantity(units_budget: float, logic, item_code: str | None = None):
+    """Return qty, keeping fractions for NO_ROUND_ITEMS, ceilling for others."""
     try:
-        res = supabase.table("communities").select("*").execute()
-        if res.data:
-            return pd.DataFrame(res.data)
-        else:
-            st.warning("Communities table is empty.")
-            return pd.DataFrame()
-    except Exception as e:
-        st.error(f"Failed to load communities: {e}")
-        return pd.DataFrame()
-
-
-@st.cache_data
-def load_items_master():
-    res = supabase.table("items_master").select("item_code, description, uom").execute()
-    return pd.DataFrame(res.data)
-
-@st.cache_data
-def load_roof_type():
-    res = supabase.table("roof_type").select("roof_type, cost_code").execute()
-    return pd.DataFrame(res.data)
-
-# ------------------------------------------------------------------------
-# Quantity logic parser
-# ------------------------------------------------------------------------
-NO_ROUND_ITEMS = {"NC134", "NC34"}         # <- any item codes that keep fractions
-
-def compute_quantity(units_budget: float,
-                     logic: str | float | int,
-                     item_code: str | None = None) -> float | None:
-    """
-    Return the quantity dictated by the community template rule.
-
-    * For item codes in NO_ROUND_ITEMS → never round; return the raw float.
-    * For all other items → round **up** using math.ceil, exactly as before.
-    """
-    try:
-        # --------------------------------------------------------
-        # 1) Rules that reference "Units Budget"
-        # --------------------------------------------------------
         if isinstance(logic, str) and "Units Budget" in logic:
             if "*" in logic:
                 factor = float(logic.split("*")[-1].strip())
@@ -125,149 +27,211 @@ def compute_quantity(units_budget: float,
                 divisor = float(logic.split("/")[-1].strip())
                 raw_qty = units_budget / divisor
             else:
-                raw_qty = units_budget                         # literal "Units Budget"
-
-        # --------------------------------------------------------
-        # 2) Rules that are literal numbers (e.g. "6", "0.5")
-        # --------------------------------------------------------
+                raw_qty = units_budget
         else:
             raw_qty = float(logic)
 
-        # --------------------------------------------------------
-        # 3) Decide whether to round
-        # --------------------------------------------------------
         if item_code and item_code.upper() in NO_ROUND_ITEMS:
-            return round(raw_qty, 2)        # keep 2‑dp for safety
-        else:
-            return float(math.ceil(raw_qty))
-
+            return round(raw_qty, 2)
+        return float(math.ceil(raw_qty))
     except Exception:
         return None
 
+# ──────────────────────────────────────────────────────────────────────────
+# PDF budget parser  (unchanged except for lot-regex upgrade)
+# ──────────────────────────────────────────────────────────────────────────
+LOT_RE = re.compile(r"""^\s*(?P<lot>\d{1,4}[A-Z]?)\s+\d+\s+.+?\(\w+\)""", re.VERBOSE)
+ITEM_RE = re.compile(
+    r"""^\s*([A-Za-z0-9()+\"'#/\-]{2,})\s+(.+?)\s+([\d.]+)\s+"""
+    r"""(EA|SQ|LF|ROLL|BNDL|BUND|PC|BOX)(?:\s+.+)?$"""
+)
 
+def parse_pdf_budget_all_lots(pdf_path) -> pd.DataFrame:
+    rows, job_number, community, last_lot = [], None, None, None
+    with pdfplumber.open(pdf_path) as pdf:
+        for page in pdf.pages:
+            text = page.extract_text()
+            if not text:
+                continue
+            for line in text.splitlines():
+                if re.match(r"^\d{5}-\d{3}\s", line.strip()):
+                    job_number = re.match(r"^(\d{5}-\d{3})", line.strip()).group(1)
+                    community = line.strip().split(job_number)[-1].strip()
+                lot_match = LOT_RE.match(line)
+                if lot_match:
+                    last_lot = lot_match.group("lot")
+                if line.strip().startswith("L"):
+                    continue
+                m = ITEM_RE.match(line)
+                if m and last_lot:
+                    code, desc, qty, uom = m.groups()
+                    rows.append(
+                        dict(
+                            Community=community,
+                            Job_Number=job_number,
+                            Lot_Number=last_lot,
+                            Cost_Code=code.strip().upper(),
+                            Description=desc.strip(),
+                            Units_Budget=float(qty),
+                            UOM=uom,
+                        )
+                    )
+    return pd.DataFrame(rows)
+
+# ──────────────────────────────────────────────────────────────────────────
+# Cached lookups  (5-min TTL + manual refresh)
+# ──────────────────────────────────────────────────────────────────────────
+@st.cache_data(ttl=300, show_spinner=False)
+def load_communities():
+    return pd.DataFrame(supabase.table("communities").select("*").execute().data)
+
+@st.cache_data(ttl=300, show_spinner=False)
+def load_items_master():
+    return pd.DataFrame(
+        supabase.table("items_master").select("item_code, description, uom").execute().data
+    )
+
+@st.cache_data(ttl=300, show_spinner=False)
+def load_roof_type():
+    return pd.DataFrame(
+        supabase.table("roof_type").select("roof_type, cost_code").execute().data
+    )
+
+# ──────────────────────────────────────────────────────────────────────────
+# Main Streamlit page
+# ──────────────────────────────────────────────────────────────────────────
 def run():
     st.title("📄 Budget Upload")
+
+    # Manual cache-bust
     if st.button("🔄 Refresh communities cache"):
-        load_communities.clear()
-        st.rerun()
+        load_communities.clear(); st.rerun()
 
     username = st.session_state.get("username", "unknown_user")
     pdf_file = st.file_uploader("Upload Budget PDF", type="pdf")
 
-    if pdf_file:
-        with st.spinner("Parsing and processing..."):
-            df_budget = parse_pdf_budget_all_lots(pdf_file)
-            st.write("✅ Parsed PDF preview:")
-            st.dataframe(df_budget.head(50))
-            st.write("Columns:", df_budget.columns.tolist())
+    if not pdf_file:
+        return
 
-            communities_df = load_communities()
-            items_master_df = load_items_master()
-            roof_type_df = load_roof_type()
+    with st.spinner("Parsing and processing…"):
+        # Step-1 ─ Parser output
+        df_budget = parse_pdf_budget_all_lots(pdf_file)
+        st.write("🟢 **Step-1 Parsed NPC rows** →", 
+                 df_budget[df_budget["Cost_Code"] == "NPC"])
 
-            results = []
-            grouped = df_budget.groupby(['Job Number', 'Lot Number'])
-            for (job_number, lot_number), lot_df in grouped:
-                extracted_cost_codes = set(lot_df['Cost Code'].str.upper())
+        # Load reference tables (fresh)
+        load_communities.clear();  # ensure new SQL is seen immediately
+        communities_df   = load_communities()
+        items_master_df  = load_items_master()
+        roof_type_df     = load_roof_type()
 
-                #here!
-                matched_roof_type = None
-                for rt in roof_type_df['roof_type'].unique():
-                    roof_codes = set(roof_type_df[roof_type_df['roof_type'] == rt]['cost_code'].str.upper())
-                    if extracted_cost_codes & roof_codes:  # <-- matches at least one
-                        matched_roof_type = rt
-                        break
-                        
-                if not matched_roof_type:
-                    st.warning(f"No roof type match for Job {job_number}, Lot {lot_number}")
-                    continue
+        st.write("🟢 **Step-2 Community NPC rows** →", 
+                 communities_df[communities_df["item_code"].str.strip() == "NPC"]
+                 [["job_number","roof_type","cost_code","item_code_qty"]])
 
-                job_prefix = job_number[:5]
-                for _, budget_row in lot_df.iterrows():
-                    budget_cost_code = budget_row['Cost Code'].upper()
-                    units_budget = budget_row['Units Budget']
+        results = []
+        grouped = df_budget.groupby(["Job_Number", "Lot_Number"])
 
-                    community_rows = communities_df[
-                        (communities_df['job_number'].str.startswith(job_prefix)) &
-                        (communities_df['roof_type'] == matched_roof_type) &
-                        (communities_df['cost_code'].str.upper() == budget_cost_code)
+        for (job_number, lot_number), lot_df in grouped:
+            extracted_codes  = set(lot_df["Cost_Code"].str.upper())
+            matched_roof     = None
+            for rt in roof_type_df["roof_type"].unique():
+                if extracted_codes & set(
+                    roof_type_df[roof_type_df["roof_type"] == rt]["cost_code"].str.upper()
+                ):
+                    matched_roof = rt; break
+            if not matched_roof:
+                continue
+
+            st.write(f"📄 **Lot {lot_number} / Job {job_number} roof={matched_roof}**")
+
+            job_prefix = job_number[:5]
+            for _, budget_row in lot_df.iterrows():
+                budget_code   = budget_row["Cost_Code"].upper()
+                units_budget  = budget_row["Units_Budget"]
+
+                community_rows = communities_df[
+                    (communities_df["job_number"].str.startswith(job_prefix)) &
+                    (communities_df["roof_type"] == matched_roof) &
+                    (communities_df["cost_code"].str.strip().str.upper() == budget_code)
+                ]
+
+                # Step-3
+                if budget_code == "NPC":
+                    st.write("🟡 **Step-3 community_rows len** →", len(community_rows))
+
+                for _, comm_row in community_rows.iterrows():
+                    item_code = comm_row["item_code"].strip()
+                    logic     = comm_row["item_code_qty"]
+                    qty       = compute_quantity(units_budget, logic, item_code)
+
+                    # Step-4
+                    if item_code == "NPC":
+                        st.write("🟡 **Step-4 qty debug** →", {"logic": logic, "qty": qty})
+
+                    if qty is None:
+                        continue
+
+                    desc_row = items_master_df[
+                        items_master_df["item_code"].str.strip() == item_code
                     ]
+                    # Step-5
+                    if item_code == "NPC":
+                        st.write("🟡 **Step-5 desc_row empty?**", desc_row.empty)
 
-                    for _, comm_row in community_rows.iterrows():
-                        item_code = comm_row['item_code']
-                        logic = comm_row['item_code_qty']
-                        qty = compute_quantity(units_budget, logic, item_code)
-                        if qty is None:
-                            continue
+                    if desc_row.empty:
+                        continue
+                    desc_row = desc_row.iloc[0]
 
-                        desc_row = items_master_df[items_master_df['item_code'] == item_code]
-                        if desc_row.empty:
-                            continue
-                        desc_row = desc_row.iloc[0]
+                    # Step-6  (will append)
+                    if item_code == "NPC":
+                        st.write("🟢 **Step-6 append row**", 
+                                 {"item_code": item_code, "qty": qty})
 
-                        results.append({
-                            'uid': str(uuid.uuid4()),
-                            'job_number': job_number,
-                            'lot_number': lot_number,
-                            'roof_type': matched_roof_type,
-                            'item_code': item_code,
-                            'cost_code': budget_cost_code,
-                            'description': desc_row['description'],
-                            'quantity': qty,
-                            'kitted_qty': 0,
-                            'shorted': None,
-                            'backorder_qty': 0,
-                            'backorder_status': 'none',
-                            'status': 'pending',
-                            'uploaded_on': datetime.now().isoformat(),
-                            'requested_on': None,
-                            'kitted_on': None,
-                            'resolved_on': None,
-                            'exported_on': None,
-                            'warehouse': None,
-                            'uom': desc_row['uom'],
-                            'batch_id': None,
-                            'updated_by': username,
-                            'requested_by': None
-                        })
+                    results.append(
+                        dict(
+                            uid=str(uuid.uuid4()),
+                            job_number=job_number,
+                            lot_number=lot_number,
+                            roof_type=matched_roof,
+                            item_code=item_code,
+                            cost_code=budget_code,
+                            description=desc_row["description"],
+                            quantity=qty,
+                            kitted_qty=0,
+                            shorted=0,
+                            backorder_qty=0,
+                            backorder_status="none",
+                            status="pending",
+                            uploaded_on=datetime.utcnow().isoformat(),
+                            requested_on=None,
+                            kitted_on=None,
+                            resolved_on=None,
+                            exported_on=None,
+                            warehouse=None,
+                            uom=desc_row["uom"],
+                            batch_id=None,
+                            updated_by=username,
+                            requested_by=None,
+                        )
+                    )
 
-            # ------------------------------------------------------------------
-            # Build DataFrame from results
-            # ------------------------------------------------------------------
-            pulltags_df = pd.DataFrame(results)
-            
-            # ── 1️⃣  Bail early if no rows were produced
-            if pulltags_df.empty:
-                st.warning("No pulltags generated. Please check input PDF and community config")
-                return
-            
-            # ── 2️⃣  Ensure numeric columns really are numeric floats (keeps decimals)
-            num_cols = ["quantity", "kitted_qty", "backorder_qty", "shorted"]
-            for col in num_cols:
-                if col in pulltags_df.columns:
-                    pulltags_df[col] = pd.to_numeric(pulltags_df[col], errors="coerce")
-            
-            #  (optional sanity check)
-            st.write("🛠 column dtypes:", pulltags_df[num_cols].dtypes)
-            
-            # ── 3️⃣  Show preview / enable download
-            st.success(f"✅ Generated {len(pulltags_df)} pulltag rows.")
-            st.dataframe(pulltags_df)
-            
-            st.download_button(
-                "Download CSV",
-                pulltags_df.to_csv(index=False),
-                file_name="pulltags_generated.csv"
-            )
-            
-            # ── 4️⃣  Build payload and submit to Supabase
-            if st.button("📤 Submit to Supabase"):
-                try:
-                    insert_data = pulltags_df.to_dict(orient="records")
-                    res = supabase.table("pulltags").insert(insert_data).execute()
-                    if res.data:
-                        st.success(f"✅ Successfully inserted {len(res.data)} rows to Supabase.")
-                    else:
-                        st.error("❌ Insertion failed or returned no data.")
-                except Exception as e:
-                    st.error(f"🚫 Supabase insert failed: {e}")
+        # ------------------ preview & submit ------------------
+        pulltags_df = pd.DataFrame(results)
+        if pulltags_df.empty:
+            st.error("🚫 No pulltags generated.")
+            return
+
+        st.success(f"✅ Generated {len(pulltags_df)} rows.")
+        st.dataframe(pulltags_df)
+        st.download_button("Download CSV",
+                           pulltags_df.to_csv(index=False),
+                           "pulltags_generated.csv")
+
+        if st.button("📤 Submit to Supabase"):
+            try:
+                res = supabase.table("pulltags").insert(pulltags_df.to_dict("records")).execute()
+                st.success(f"Inserted {len(res.data or [])} rows.")
+            except Exception as e:
+                st.error(f"Supabase insert failed: {e}")
+
