@@ -99,22 +99,49 @@ def load_roof_type():
     res = supabase.table("roof_type").select("roof_type, cost_code").execute()
     return pd.DataFrame(res.data)
 
+# ------------------------------------------------------------------------
 # Quantity logic parser
-def compute_quantity(units_budget, logic):
+# ------------------------------------------------------------------------
+NO_ROUND_ITEMS = {"NC134", "NC34"}         # <- any item codes that keep fractions
+
+def compute_quantity(units_budget: float,
+                     logic: str | float | int,
+                     item_code: str | None = None) -> float | None:
+    """
+    Return the quantity dictated by the community template rule.
+
+    * For item codes in NO_ROUND_ITEMS → never round; return the raw float.
+    * For all other items → round **up** using math.ceil, exactly as before.
+    """
     try:
-        if isinstance(logic, str) and 'Units Budget' in logic:
-            if '*' in logic:
-                factor = float(logic.split('*')[-1].strip())
-                return math.ceil(units_budget * factor)
-            elif '/' in logic:
-                divisor = float(logic.split('/')[-1].strip())
-                return math.ceil(units_budget / divisor)
+        # --------------------------------------------------------
+        # 1) Rules that reference "Units Budget"
+        # --------------------------------------------------------
+        if isinstance(logic, str) and "Units Budget" in logic:
+            if "*" in logic:
+                factor = float(logic.split("*")[-1].strip())
+                raw_qty = units_budget * factor
+            elif "/" in logic:
+                divisor = float(logic.split("/")[-1].strip())
+                raw_qty = units_budget / divisor
             else:
-                return math.ceil(units_budget)
+                raw_qty = units_budget                         # literal "Units Budget"
+
+        # --------------------------------------------------------
+        # 2) Rules that are literal numbers (e.g. "6", "0.5")
+        # --------------------------------------------------------
         else:
-            # Try to cast any other numeric value (int or float)
-            return float(logic)
-    except:
+            raw_qty = float(logic)
+
+        # --------------------------------------------------------
+        # 3) Decide whether to round
+        # --------------------------------------------------------
+        if item_code and item_code.upper() in NO_ROUND_ITEMS:
+            return round(raw_qty, 2)        # keep 2‑dp for safety
+        else:
+            return float(math.ceil(raw_qty))
+
+    except Exception:
         return None
 
 
@@ -166,7 +193,7 @@ def run():
                     for _, comm_row in community_rows.iterrows():
                         item_code = comm_row['item_code']
                         logic = comm_row['item_code_qty']
-                        qty = compute_quantity(units_budget, logic)
+                        qty = compute_quantity(units_budget, logic, item_code)
                         if qty is None:
                             continue
 
@@ -201,38 +228,36 @@ def run():
                             'requested_by': None
                         })
 
-            #here
+            # ------------------------------------------------------------------
+            # Build DataFrame from results
+            # ------------------------------------------------------------------
             pulltags_df = pd.DataFrame(results)
             
-            # ── 👉 1. Bail early if nothing was generated
+            # ── 1️⃣  Bail early if no rows were produced
             if pulltags_df.empty:
                 st.warning("No pulltags generated. Please check input PDF and community config")
                 return
             
-            # ── 👉 2. CAST the numeric columns to true nullable-integers  ✨
-            int_cols = ["quantity", "kitted_qty", "backorder_qty", "shorted"]
-            for col in int_cols:
+            # ── 2️⃣  Ensure numeric columns really are numeric floats (keeps decimals)
+            num_cols = ["quantity", "kitted_qty", "backorder_qty", "shorted"]
+            for col in num_cols:
                 if col in pulltags_df.columns:
-                    pulltags_df[col] = (
-                        pulltags_df[col]
-                          .round(0)               # 1.0 → 1   (2.7 → 3)
-                          .astype("Int64")        # pandas nullable int
-                          .where(pulltags_df[col].notnull(), None)   # NaN → None
-                    )
+                    pulltags_df[col] = pd.to_numeric(pulltags_df[col], errors="coerce")
             
-            # (Optional sanity check)
-            st.write("🛠 Column dtypes after cast:", pulltags_df.dtypes)
+            #  (optional sanity check)
+            st.write("🛠 column dtypes:", pulltags_df[num_cols].dtypes)
             
-            # ── 👉 3. Show preview / enable download
+            # ── 3️⃣  Show preview / enable download
             st.success(f"✅ Generated {len(pulltags_df)} pulltag rows.")
             st.dataframe(pulltags_df)
+            
             st.download_button(
                 "Download CSV",
                 pulltags_df.to_csv(index=False),
                 file_name="pulltags_generated.csv"
             )
             
-            # ── 👉 4. Only now build the insert payload
+            # ── 4️⃣  Build payload and submit to Supabase
             if st.button("📤 Submit to Supabase"):
                 try:
                     insert_data = pulltags_df.to_dict(orient="records")
