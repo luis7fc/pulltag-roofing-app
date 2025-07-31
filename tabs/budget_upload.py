@@ -102,18 +102,7 @@ def load_roof_type():
 # ──────────────────────────────────────────────────────────────────────────
 def run():
     st.title("📄 Budget Upload")
-    # ───────────── Raw pull from Supabase, no caching ─────────────
-    raw_comm = supabase.table("communities").select(
-        "item_code, cost_code, roof_type, job_number, item_code_qty"
-    ).eq("item_code", "NPC").execute()
-    
-    st.write("🔍 RAW Supabase rows where item_code = 'NPC' →", raw_comm.data)
-    st.write(
-        communities_df.query("item_code == 'NPC'")[[
-            "job_number", "roof_type", "cost_code"
-        ]]
-    )
-
+ 
     # Manual cache-bust
     if st.button("🔄 Refresh communities cache"):
         load_communities.clear(); st.rerun()
