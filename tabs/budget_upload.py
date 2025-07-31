@@ -118,7 +118,7 @@ def run():
         df_budget = parse_pdf_budget_all_lots(pdf_file)
         df_budget.columns = [col.strip().replace(" ", "_").lower() for col in df_budget.columns]
         st.write("🟢 **Step-1 Parsed NPC rows** →", 
-                 df_budget[df_budget["Cost_Code"] == "NPC"])
+                 df_budget[df_budget["cost_code"] == "NPC"])
         # ─── FINAL DEBUG 🔍
         raw = supabase.table("communities").select("*").eq("item_code", "NPC").execute()
         
@@ -144,7 +144,7 @@ def run():
         grouped = df_budget.groupby(["job_number", "lot_number"])
 
         for (job_number, lot_number), lot_df in grouped:
-            extracted_codes  = set(lot_df["Cost_Code"].str.upper())
+            extracted_codes  = set(lot_df["cost_code"].str.upper())
             matched_roof     = None
             for rt in roof_type_df["roof_type"].unique():
                 if extracted_codes & set(
