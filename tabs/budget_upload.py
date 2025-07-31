@@ -108,6 +108,11 @@ def run():
     ).eq("item_code", "NPC").execute()
     
     st.write("🔍 RAW Supabase rows where item_code = 'NPC' →", raw_comm.data)
+    st.write(
+        communities_df.query("item_code == 'NPC'")[[
+            "job_number", "roof_type", "cost_code"
+        ]]
+    )
 
     # Manual cache-bust
     if st.button("🔄 Refresh communities cache"):
