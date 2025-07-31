@@ -123,8 +123,13 @@ def run():
         raw = supabase.table("communities").select("*").eq("item_code", "NPC").execute()
         
         st.write("🧨 RAW Supabase NPC rows (no cache):", raw.data)
-        st.write("🧨 Status code:", raw.status_code)
-        st.write("🧨 Error (if any):", raw.error)
+        if raw.error:
+            st.error(f"🧨 Supabase Error: {raw.error}")
+        elif not raw.data:
+            st.warning("🧨 Supabase returned no data for item_code = 'NPC'")
+        else:
+            st.success(f"🧨 Supabase returned {len(raw.data)} NPC rows.")
+
         # Load reference tables (fresh)
         load_communities.clear();  # ensure new SQL is seen immediately
         communities_df   = load_communities()
