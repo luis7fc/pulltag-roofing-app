@@ -124,6 +124,11 @@ def run():
         communities_df   = load_communities()
         items_master_df  = load_items_master()
         roof_type_df     = load_roof_type()
+        # 🔧 Normalize string columns to prevent pandas matching bugs
+        communities_df["job_number"]  = communities_df["job_number"].astype(str).str.strip()
+        communities_df["roof_type"]   = communities_df["roof_type"].astype(str).str.strip()
+        communities_df["cost_code"]   = communities_df["cost_code"].astype(str).str.strip().str.upper()
+        communities_df["item_code"]   = communities_df["item_code"].astype(str).str.strip()
 
         st.write("🟢 **Step-2 Community NPC rows** →", 
                  communities_df[communities_df["item_code"].str.strip() == "NPC"]
@@ -149,6 +154,9 @@ def run():
             for _, budget_row in lot_df.iterrows():
                 budget_code   = budget_row["Cost_Code"].upper()
                 units_budget  = budget_row["Units_Budget"]
+                job_prefix     = str(job_number)[:5]
+                matched_roof   = str(matched_roof).strip()
+                budget_code    = str(budget_code).strip().upper()
 
                 community_rows = communities_df[
                     (communities_df["job_number"].str.startswith(job_prefix)) &
