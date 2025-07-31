@@ -65,6 +65,10 @@ def run():
     if pdf_file:
         with st.spinner("Parsing and processing..."):
             df_budget = parse_pdf_budget_all_lots(pdf_file)
+            st.write("✅ Parsed PDF preview:")
+            st.dataframe(df_budget.head(50))
+            st.write("Columns:", df_budget.columns.tolist())
+
             communities_df = load_communities()
             items_master_df = load_items_master()
             roof_type_df = load_roof_type()
