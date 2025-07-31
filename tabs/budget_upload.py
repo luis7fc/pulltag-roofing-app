@@ -22,7 +22,15 @@ def parse_pdf_budget_all_lots(pdf_path: str) -> pd.DataFrame:
     current_lot = None
     last_known_lot = None
 
-    lot_header_pattern = re.compile(r"^(\d{4})\s+[\d\s\w]+?\(\w+\)")
+    lot_header_pattern = re.compile(
+        r"""^\s*
+            (?P<lot>\d{1,4}[A-Z]?)      # 1-4 digits, optional A/B suffix  ← LOT
+            \s+\d+\s+                   # address number (throw-away)
+            .+?\(\w+\)                  # street & model in (…)
+        """,
+        re.VERBOSE,
+    )
+
     flex_item_pattern = re.compile(
         r"^\s*([A-Za-z0-9\(\)\+\"'#\/\-]{2,})\s+(.+?)\s+([\d.]+)\s+(EA|SQ|BNDL|ROLL|PC|BUND|BOX)\s*$"
     )
