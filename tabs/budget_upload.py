@@ -123,15 +123,22 @@ def run():
                             'description': desc_row['description'],
                             'quantity': qty,
                             'kitted_qty': 0,
+                            'shorted': None,
                             'backorder_qty': 0,
                             'backorder_status': 'none',
                             'status': 'pending',
                             'uploaded_on': datetime.now().isoformat(),
+                            'requested_on': None,
+                            'kitted_on': None,
+                            'resolved_on': None,
+                            'exported_on': None,
                             'warehouse': None,
                             'uom': desc_row['uom'],
                             'batch_id': None,
-                            'updated_by': username
+                            'updated_by': username,
+                            'requested_by': None
                         })
+
 
             pulltags_df = pd.DataFrame(results)
             if pulltags_df.empty:
