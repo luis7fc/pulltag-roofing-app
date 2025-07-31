@@ -201,22 +201,45 @@ def run():
                             'requested_by': None
                         })
 
-
+            #here
             pulltags_df = pd.DataFrame(results)
+            
+            # ── 👉 1. Bail early if nothing was generated
             if pulltags_df.empty:
                 st.warning("No pulltags generated. Please check input PDF and community config")
-            else:
-                st.success(f"✅ Generated {len(pulltags_df)} pulltag rows.")
-                st.dataframe(pulltags_df)
-                st.download_button("Download CSV", pulltags_df.to_csv(index=False), file_name="pulltags_generated.csv")
-
-                if st.button("📤 Submit to Supabase"):
-                    try:
-                        insert_data = pulltags_df.to_dict(orient='records')
-                        res = supabase.table("pulltags").insert(insert_data).execute()
-                        if res.data:
-                            st.success(f"✅ Successfully inserted {len(res.data)} rows to Supabase.")
-                        else:
-                            st.error("❌ Insertion failed or returned no data.")
-                    except Exception as e:
-                        st.error(f"🚫 Supabase insert failed: {e}")
+                return
+            
+            # ── 👉 2. CAST the numeric columns to true nullable-integers  ✨
+            int_cols = ["quantity", "kitted_qty", "backorder_qty", "shorted"]
+            for col in int_cols:
+                if col in pulltags_df.columns:
+                    pulltags_df[col] = (
+                        pulltags_df[col]
+                          .round(0)               # 1.0 → 1   (2.7 → 3)
+                          .astype("Int64")        # pandas nullable int
+                          .where(pulltags_df[col].notnull(), None)   # NaN → None
+                    )
+            
+            # (Optional sanity check)
+            st.write("🛠 Column dtypes after cast:", pulltags_df.dtypes)
+            
+            # ── 👉 3. Show preview / enable download
+            st.success(f"✅ Generated {len(pulltags_df)} pulltag rows.")
+            st.dataframe(pulltags_df)
+            st.download_button(
+                "Download CSV",
+                pulltags_df.to_csv(index=False),
+                file_name="pulltags_generated.csv"
+            )
+            
+            # ── 👉 4. Only now build the insert payload
+            if st.button("📤 Submit to Supabase"):
+                try:
+                    insert_data = pulltags_df.to_dict(orient="records")
+                    res = supabase.table("pulltags").insert(insert_data).execute()
+                    if res.data:
+                        st.success(f"✅ Successfully inserted {len(res.data)} rows to Supabase.")
+                    else:
+                        st.error("❌ Insertion failed or returned no data.")
+                except Exception as e:
+                    st.error(f"🚫 Supabase insert failed: {e}")
