@@ -80,7 +80,7 @@ def parse_pdf_budget_all_lots(pdf_path) -> pd.DataFrame:
 
 # ──────────────────────────────────────────────────────────────────────────
 # Cached lookups  (5-min TTL + manual refresh)
-# ──────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────
 @st.cache_data(ttl=300, show_spinner=False)
 def load_communities():
     return pd.DataFrame(supabase.table("communities").select("*").execute().data)
@@ -116,9 +116,15 @@ def run():
     with st.spinner("Parsing and processing…"):
         # Step-1 ─ Parser output
         df_budget = parse_pdf_budget_all_lots(pdf_file)
+        df_budget.columns = [col.strip().replace(" ", "_").lower() for col in df_budget.columns]
         st.write("🟢 **Step-1 Parsed NPC rows** →", 
                  df_budget[df_budget["Cost_Code"] == "NPC"])
-
+        # ─── FINAL DEBUG 🔍
+        raw = supabase.table("communities").select("*").eq("item_code", "NPC").execute()
+        
+        st.write("🧨 RAW Supabase NPC rows (no cache):", raw.data)
+        st.write("🧨 Status code:", raw.status_code)
+        st.write("🧨 Error (if any):", raw.error)
         # Load reference tables (fresh)
         load_communities.clear();  # ensure new SQL is seen immediately
         communities_df   = load_communities()
@@ -135,7 +141,7 @@ def run():
                  [["job_number","roof_type","cost_code","item_code_qty"]])
 
         results = []
-        grouped = df_budget.groupby(["Job_Number", "Lot_Number"])
+        grouped = df_budget.groupby(["job_number", "lot_number"])
 
         for (job_number, lot_number), lot_df in grouped:
             extracted_codes  = set(lot_df["Cost_Code"].str.upper())
@@ -152,11 +158,30 @@ def run():
 
             job_prefix = job_number[:5]
             for _, budget_row in lot_df.iterrows():
-                budget_code   = budget_row["Cost_Code"].upper()
-                units_budget  = budget_row["Units_Budget"]
+                budget_code   = budget_row["cost_code"].upper()
+                units_budget  = budget_row["units_budget"]
                 job_prefix     = str(job_number)[:5]
                 matched_roof   = str(matched_roof).strip()
                 budget_code    = str(budget_code).strip().upper()
+                
+                if budget_code == "NPC":
+                    debug_rows = communities_df[
+                        communities_df["item_code"] == "NPC"
+                    ]
+                
+                    st.write("🧪 NPC filter debug", {
+                        "job_prefix": job_prefix,
+                        "matched_roof": matched_roof,
+                        "budget_code": budget_code,
+                    })
+                
+                    test_filtered = debug_rows[
+                        debug_rows["job_number"].str.startswith(job_prefix) &
+                        (debug_rows["roof_type"] == matched_roof) &
+                        (debug_rows["cost_code"] == budget_code)
+                    ]
+                
+                    st.write("🧪 NPC test_filtered rows:", test_filtered)
 
                 community_rows = communities_df[
                     (communities_df["job_number"].str.startswith(job_prefix)) &
