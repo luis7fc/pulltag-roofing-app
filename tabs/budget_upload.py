@@ -147,6 +147,9 @@ def compute_quantity(units_budget: float,
 
 def run():
     st.title("📄 Budget Upload")
+    if st.button("🔄 Refresh communities cache"):
+        load_communities.clear()
+        st.rerun()
 
     username = st.session_state.get("username", "unknown_user")
     pdf_file = st.file_uploader("Upload Budget PDF", type="pdf")
